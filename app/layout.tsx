@@ -17,14 +17,13 @@ const dmSans = DM_Sans({
 
 export const metadata: Metadata = {
   title: 'SavoryShelf',
-  description: 'Import any recipe from the web. Clean, beautiful, distraction-free.',
+  description: 'Save and organise recipes from anywhere — by Cocolito Collective.',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${lora.variable} ${dmSans.variable}`} suppressHydrationWarning>
       <head>
-        {/* Set theme before paint to avoid flash. Default: dark. */}
         <script dangerouslySetInnerHTML={{ __html: `
           (function(){
             var t=localStorage.getItem('savoryshelf-theme');
@@ -33,9 +32,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           })()
         `}} />
       </head>
-      <body className="min-h-screen bg-bg font-body antialiased">
+      <body className="min-h-screen bg-bg font-body antialiased flex flex-col">
         <Nav />
-        <main className="px-4 max-w-2xl mx-auto">{children}</main>
+        <main className="px-4 max-w-2xl mx-auto flex-1 w-full">{children}</main>
+        <footer className="border-t border-border py-5 text-center mt-8">
+          <p className="text-xs text-subtle">by Cocolito Collective</p>
+        </footer>
       </body>
     </html>
   )

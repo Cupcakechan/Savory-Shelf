@@ -145,7 +145,7 @@ function extractJsonLd(html: string): Recipe | null {
             : (imgRaw as Record<string, string> | undefined)?.url
 
         return {
-          id: `${Date.now()}`,
+          id: crypto.randomUUID(),
           title: String(item.name || 'Untitled Recipe'),
           image: typeof image === 'string' ? image : undefined,
           prepTime: parseDuration(String(item.prepTime || '')),
@@ -198,7 +198,7 @@ function extractHtmlFallback(html: string): Recipe {
     .slice(0, 30)
 
   return {
-    id: `${Date.now()}`,
+    id: crypto.randomUUID(),
     title: stripTags(title).split('|')[0].split('–')[0].trim(),
     image,
     ingredients: ingredients.length
