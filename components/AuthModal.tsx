@@ -26,13 +26,13 @@ export default function AuthModal({ onClose }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-start sm:items-center justify-center p-4 sm:p-6 overflow-y-auto">
 
       {/* Backdrop click to close */}
       <div className="absolute inset-0" onClick={onClose} />
 
       {/* Modal box */}
-      <div className="relative max-w-md w-full bg-zinc-900 rounded-2xl shadow-2xl overflow-hidden">
+       <div className="relative max-w-md w-full bg-zinc-900 rounded-2xl shadow-2xl overflow-hidden my-6 sm:my-0">
         <div className="py-10 px-8">
 
           {/* Close */}
