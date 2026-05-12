@@ -15,7 +15,7 @@
     "lucide-react": "^0.454.0",
     "@supabase/supabase-js": "^2.45.4",
     "ai": "^4.0.0",
-    "@ai-sdk/xai": "^0.1.0"
+    "@ai-sdk/xai": "^3.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
