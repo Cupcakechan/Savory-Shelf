@@ -16,6 +16,22 @@ import {
 import KitchenNotesModal from './KitchenNotesModal'
 import AuthModal from './AuthModal'
 
+// ── Time formatter ────────────────────────────────────────
+// Handles both ISO 8601 (PT1H30M, P0DT0H10M) and already-formatted strings
+
+function formatTime(t: string | undefined): string {
+  if (!t) return ''
+  if (!t.startsWith('P')) return t // Already human-readable
+  const m = t.match(/P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?)?/)
+  if (!m) return t
+  const h = parseInt(m[1] || '0') * 24 + parseInt(m[2] || '0')
+  const min = parseInt(m[3] || '0')
+  if (h && min) return `${h} hr ${min} min`
+  if (h) return `${h} hr`
+  if (min) return `${min} min`
+  return t
+}
+
 // ── Ingredient scaling ────────────────────────────────────
 
 function formatNum(n: number): string {
@@ -90,8 +106,6 @@ function AiLoadingModal() {
   )
 }
 
-// ── AI Error Modal ────────────────────────────────────────
-
 function AiErrorModal({ message, onClose }: { message: string; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -112,16 +126,12 @@ function AiErrorModal({ message, onClose }: { message: string; onClose: () => vo
 function TranslateModal({
   result, onClose, onApply, applied,
 }: {
-  result: TranslateResult
-  onClose: () => void
-  onApply: () => void
-  applied: boolean
+  result: TranslateResult; onClose: () => void; onApply: () => void; applied: boolean
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-bg border border-border rounded-2xl max-w-lg w-full shadow-2xl flex flex-col max-h-[88vh]">
-        {/* Header */}
         <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-border flex-shrink-0">
           <div className="flex items-center gap-2.5">
             <Languages size={17} className="text-accent" />
@@ -129,11 +139,8 @@ function TranslateModal({
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg text-muted hover:text-text hover:bg-surface transition-colors"><X size={16} /></button>
         </div>
-
-        {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
           <h4 className="font-display text-xl font-bold text-text leading-snug">{result.title}</h4>
-
           <div>
             <p className="text-xs font-semibold text-muted uppercase tracking-widest mb-2">Ingredients</p>
             <ul className="space-y-1.5">
@@ -144,7 +151,6 @@ function TranslateModal({
               ))}
             </ul>
           </div>
-
           <div>
             <p className="text-xs font-semibold text-muted uppercase tracking-widest mb-2">Instructions</p>
             <ol className="space-y-3">
@@ -157,17 +163,9 @@ function TranslateModal({
             </ol>
           </div>
         </div>
-
-        {/* Actions */}
         <div className="px-6 py-5 border-t border-border flex-shrink-0 flex gap-3">
-          <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-border text-sm font-medium text-muted hover:text-text hover:border-accent/40 transition-colors">
-            Close
-          </button>
-          <button
-            onClick={onApply}
-            disabled={applied}
-            className="flex-1 py-3 rounded-xl bg-accent text-white text-sm font-semibold hover:bg-accent/90 disabled:opacity-70 active:scale-[.98] transition-all flex items-center justify-center gap-2"
-          >
+          <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-border text-sm font-medium text-muted hover:text-text hover:border-accent/40 transition-colors">Close</button>
+          <button onClick={onApply} disabled={applied} className="flex-1 py-3 rounded-xl bg-accent text-white text-sm font-semibold hover:bg-accent/90 disabled:opacity-70 active:scale-[.98] transition-all flex items-center justify-center gap-2">
             {applied ? <><CheckCircle size={15} />Saved!</> : 'Apply as new recipe'}
           </button>
         </div>
@@ -181,16 +179,12 @@ function TranslateModal({
 function SubstitutesModal({
   result, onClose, onCopyToNotes, copied,
 }: {
-  result: SubstitutesResult
-  onClose: () => void
-  onCopyToNotes: () => void
-  copied: boolean
+  result: SubstitutesResult; onClose: () => void; onCopyToNotes: () => void; copied: boolean
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-bg border border-border rounded-2xl max-w-md w-full shadow-2xl flex flex-col max-h-[88vh]">
-        {/* Header */}
         <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-border flex-shrink-0">
           <div className="flex items-center gap-2.5">
             <Sparkles size={17} className="text-accent" />
@@ -198,8 +192,6 @@ function SubstitutesModal({
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg text-muted hover:text-text hover:bg-surface transition-colors"><X size={16} /></button>
         </div>
-
-        {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
           {result.substitutes.length === 0 ? (
             <p className="text-sm text-muted italic">All ingredients in this recipe are commonly available — no substitutes needed!</p>
@@ -217,21 +209,11 @@ function SubstitutesModal({
               </div>
             ))
           )}
-          {result.note && (
-            <p className="text-xs text-muted italic leading-relaxed pt-1">{result.note}</p>
-          )}
+          {result.note && <p className="text-xs text-muted italic leading-relaxed pt-1">{result.note}</p>}
         </div>
-
-        {/* Actions */}
         <div className="px-6 py-5 border-t border-border flex-shrink-0 flex gap-3">
-          <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-border text-sm font-medium text-muted hover:text-text hover:border-accent/40 transition-colors">
-            Close
-          </button>
-          <button
-            onClick={onCopyToNotes}
-            disabled={copied}
-            className="flex-1 py-3 rounded-xl bg-accent text-white text-sm font-semibold hover:bg-accent/90 disabled:opacity-70 active:scale-[.98] transition-all flex items-center justify-center gap-2"
-          >
+          <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-border text-sm font-medium text-muted hover:text-text hover:border-accent/40 transition-colors">Close</button>
+          <button onClick={onCopyToNotes} disabled={copied} className="flex-1 py-3 rounded-xl bg-accent text-white text-sm font-semibold hover:bg-accent/90 disabled:opacity-70 active:scale-[.98] transition-all flex items-center justify-center gap-2">
             {copied ? <><CheckCircle size={15} />Copied!</> : 'Copy to Kitchen Notes'}
           </button>
         </div>
@@ -265,13 +247,15 @@ export default function RecipeView({
   const [showShare, setShowShare]         = useState(false)
   const [shareUrl, setShareUrl]           = useState('')
   const [showAuth, setShowAuth]           = useState(false)
-  // AI state
   const [aiLoading, setAiLoading]               = useState(false)
   const [aiError, setAiError]                   = useState('')
   const [translateResult, setTranslateResult]   = useState<TranslateResult | null>(null)
   const [translateApplied, setTranslateApplied] = useState(false)
   const [substitutesResult, setSubstitutesResult] = useState<SubstitutesResult | null>(null)
   const [substitutesCopied, setSubstitutesCopied] = useState(false)
+
+  // Hide translate button on already-translated recipes
+  const isTranslated = recipe.title.includes('(translated)')
 
   useEffect(() => {
     if (readOnly) return
@@ -316,8 +300,6 @@ export default function RecipeView({
     setShowShare(true)
   }
 
-  // ── AI handlers ────────────────────────────────────────
-
   const handleTranslate = async () => {
     setAiLoading(true)
     const { result, error } = await translateRecipe(recipe)
@@ -344,9 +326,7 @@ export default function RecipeView({
       instructions: translateResult.instructions,
       savedAt: undefined,
     }
-    if (user) {
-      await supabase.from('recipes').insert(toDbRecipe(newRecipe, user.id))
-    }
+    if (user) await supabase.from('recipes').insert(toDbRecipe(newRecipe, user.id))
     setTranslateApplied(true)
     setTimeout(() => { setTranslateApplied(false); setTranslateResult(null) }, 1800)
   }
@@ -360,11 +340,8 @@ export default function RecipeView({
       ),
       substitutesResult.note ? `\nNote: ${substitutesResult.note}` : '',
     ].filter(Boolean).join('\n\n')
-
     const fullNotes = recipe.notes ? `${recipe.notes}\n\n${block}` : block
-    if (user && saved) {
-      await supabase.from('recipes').update({ notes: fullNotes }).eq('id', recipe.id)
-    }
+    if (user && saved) await supabase.from('recipes').update({ notes: fullNotes }).eq('id', recipe.id)
     setRecipe(r => ({ ...r, notes: fullNotes }))
     setSubstitutesCopied(true)
     setTimeout(() => { setSubstitutesCopied(false); setSubstitutesResult(null) }, 1800)
@@ -408,11 +385,11 @@ export default function RecipeView({
           )}
         </div>
 
-        {/* Badges */}
+        {/* Badges — formatTime handles both ISO 8601 and already-formatted strings */}
         {(recipe.prepTime || recipe.cookTime || recipe.servings) && (
           <div className="flex flex-wrap gap-2 mb-8">
-            {recipe.prepTime && <Chip icon={<Clock size={13} />} label={`Prep ${recipe.prepTime}`} />}
-            {recipe.cookTime && <Chip icon={<Clock size={13} />} label={`Cook ${recipe.cookTime}`} />}
+            {recipe.prepTime && <Chip icon={<Clock size={13} />} label={`Prep ${formatTime(recipe.prepTime)}`} />}
+            {recipe.cookTime && <Chip icon={<Clock size={13} />} label={`Cook ${formatTime(recipe.cookTime)}`} />}
             {recipe.servings && <Chip icon={<Users size={13} />} label={`${recipe.servings} servings`} />}
           </div>
         )}
@@ -440,13 +417,18 @@ export default function RecipeView({
           </div>
         )}
 
-        {/* AI buttons */}
+        {/* AI buttons — translate hidden on already-translated recipes */}
         {!readOnly && (
           <div className="flex gap-3 mb-9">
-            <button onClick={handleTranslate} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border border-border text-sm font-medium text-muted hover:border-accent/40 hover:text-text transition-all active:scale-[.98]">
-              <Languages size={15} />Translate to English
-            </button>
-            <button onClick={handleSubstitutes} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border border-border text-sm font-medium text-muted hover:border-accent/40 hover:text-text transition-all active:scale-[.98]">
+            {!isTranslated && (
+              <button onClick={handleTranslate} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border border-border text-sm font-medium text-muted hover:border-accent/40 hover:text-text transition-all active:scale-[.98]">
+                <Languages size={15} />Translate to English
+              </button>
+            )}
+            <button
+              onClick={handleSubstitutes}
+              className={`${isTranslated ? 'w-full' : 'flex-1'} flex items-center justify-center gap-2 py-3 rounded-xl border border-border text-sm font-medium text-muted hover:border-accent/40 hover:text-text transition-all active:scale-[.98]`}
+            >
               <Sparkles size={15} />Suggest Substitutes
             </button>
           </div>
@@ -480,7 +462,6 @@ export default function RecipeView({
           </ol>
         </Section>
 
-        {/* Kitchen Notes */}
         {recipe.notes && (
           <Section title="My Kitchen Notes">
             <p className="text-sm leading-relaxed text-muted italic whitespace-pre-wrap">{recipe.notes}</p>
@@ -494,20 +475,15 @@ export default function RecipeView({
         )}
       </article>
 
-      {/* Modals */}
       {showNotes && (
         <KitchenNotesModal recipe={recipe} userId={user?.id} isSaved={saved} onClose={() => setShowNotes(false)} onSave={notes => setRecipe(r => ({ ...r, notes: notes || undefined }))} />
       )}
-      {showShare     && <ShareModal url={shareUrl} onClose={() => setShowShare(false)} />}
-      {showAuth      && <AuthModal onClose={() => setShowAuth(false)} />}
-      {aiLoading     && <AiLoadingModal />}
-      {aiError       && <AiErrorModal message={aiError} onClose={() => setAiError('')} />}
-      {translateResult && (
-        <TranslateModal result={translateResult} onClose={() => setTranslateResult(null)} onApply={applyTranslation} applied={translateApplied} />
-      )}
-      {substitutesResult && (
-        <SubstitutesModal result={substitutesResult} onClose={() => setSubstitutesResult(null)} onCopyToNotes={copySubstitutesToNotes} copied={substitutesCopied} />
-      )}
+      {showShare       && <ShareModal url={shareUrl} onClose={() => setShowShare(false)} />}
+      {showAuth        && <AuthModal onClose={() => setShowAuth(false)} />}
+      {aiLoading       && <AiLoadingModal />}
+      {aiError         && <AiErrorModal message={aiError} onClose={() => setAiError('')} />}
+      {translateResult && <TranslateModal result={translateResult} onClose={() => setTranslateResult(null)} onApply={applyTranslation} applied={translateApplied} />}
+      {substitutesResult && <SubstitutesModal result={substitutesResult} onClose={() => setSubstitutesResult(null)} onCopyToNotes={copySubstitutesToNotes} copied={substitutesCopied} />}
     </>
   )
 }

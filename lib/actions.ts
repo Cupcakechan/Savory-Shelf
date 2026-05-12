@@ -51,16 +51,16 @@ async function fetchImageAsBase64(imageUrl: string, pageUrl: string): Promise<st
 
 // ── Helpers ────────────────────────────────────────────────
 
-/** Convert ISO-8601 duration (PT1H30M) → human string (1h 30m) */
+/** Convert ISO-8601 duration (PT1H30M, P0DT1H30M, etc.) → "1 hr 30 min" */
 function parseDuration(d: string): string {
   if (!d) return ''
-  const m = d.match(/PT(?:(\d+)H)?(?:(\d+)M)?/)
-  if (!m) return d
-  const h = parseInt(m[1] || '0')
-  const min = parseInt(m[2] || '0')
-  if (h && min) return `${h}h ${min}m`
-  if (h) return `${h}h`
-  if (min) return `${min}m`
+  const m = d.match(/P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?)?/)
+  if (!m || (!m[1] && !m[2] && !m[3])) return d
+  const h = parseInt(m[1] || '0') * 24 + parseInt(m[2] || '0')
+  const min = parseInt(m[3] || '0')
+  if (h && min) return `${h} hr ${min} min`
+  if (h) return `${h} hr`
+  if (min) return `${min} min`
   return d
 }
 
@@ -223,15 +223,27 @@ export async function importRecipe(
     const res = await fetch(url, {
       headers: {
         'User-Agent':
-          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
-          '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        Accept: 'text/html,application/xhtml+xml',
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+          '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Cache-Control': 'max-age=0',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Upgrade-Insecure-Requests': '1',
       },
       next: { revalidate: 0 },
     })
 
     if (!res.ok) {
+      if (res.status === 403) {
+        return {
+          error:
+            'This website blocks automatic import. Try a different recipe URL or paste the ingredients and instructions manually.',
+        }
+      }
       return { error: `The page returned an error (HTTP ${res.status}). Try another URL.` }
     }
 
