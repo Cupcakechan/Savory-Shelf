@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { X, Mail, CheckCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -11,6 +12,10 @@ export default function AuthModal({ onClose }: Props) {
   const [loading, setLoading] = useState(false)
   const [sent, setSent]       = useState(false)
   const [error, setError]     = useState('')
+  const [mounted, setMounted] = useState(false)
+
+  // Portal requires document to be available (client only)
+  useEffect(() => { setMounted(true) }, [])
 
   const send = async () => {
     if (!email.trim()) return
@@ -25,15 +30,17 @@ export default function AuthModal({ onClose }: Props) {
     else setSent(true)
   }
 
-  return (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-start sm:items-center justify-center p-4 sm:p-6 overflow-y-auto">
+  if (!mounted) return null
 
-      {/* Backdrop click to close */}
+  return createPortal(
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+
+      {/* Backdrop */}
       <div className="absolute inset-0" onClick={onClose} />
 
       {/* Modal box */}
-       <div className="relative max-w-md w-full bg-zinc-900 rounded-2xl shadow-2xl overflow-hidden my-6 sm:my-0">
-        <div className="py-10 px-8">
+      <div className="relative bg-zinc-900 rounded-3xl shadow-2xl max-w-md w-full overflow-hidden">
+        <div className="px-8 pt-8 pb-10">
 
           {/* Close */}
           <button
@@ -44,9 +51,11 @@ export default function AuthModal({ onClose }: Props) {
           </button>
 
           {sent ? (
-            <div className="text-center">
+            <div className="text-center py-4">
               <CheckCircle size={40} className="text-accent mx-auto mb-4" />
-              <h3 className="font-display text-xl font-bold text-white mb-2">Check your email</h3>
+              <h3 className="font-display text-xl font-bold text-white mb-2">
+                Check your email
+              </h3>
               <p className="text-sm text-zinc-400 leading-relaxed">
                 We sent a magic link to{' '}
                 <strong className="text-white">{email}</strong>.
@@ -83,8 +92,8 @@ export default function AuthModal({ onClose }: Props) {
               />
 
               <p className="text-xs text-zinc-500 leading-relaxed mb-6">
-                We never sell or share your email. It's only used to securely save
-                your recipes in the cloud.
+                We never sell or share your email. It's only used to securely
+                save your recipes in the cloud.
               </p>
 
               {error && <p className="text-xs text-red-400 mb-3">{error}</p>}
@@ -100,6 +109,7 @@ export default function AuthModal({ onClose }: Props) {
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
