@@ -8,14 +8,12 @@ import { Recipe } from '@/lib/types'
 import { supabase, fromDbRecipe } from '@/lib/supabase'
 import RecipeCard from '@/components/RecipeCard'
 import RecipeView from '@/components/RecipeView'
-import EditModal from '@/components/EditModal'
 import AuthModal from '@/components/AuthModal'
 
 export default function MyRecipesPage() {
   const [recipes, setRecipes]   = useState<Recipe[]>([])
   const [user, setUser]         = useState<User | null>(null)
   const [selected, setSelected] = useState<Recipe | null>(null)
-  const [editing, setEditing]   = useState<Recipe | null>(null)
   const [showAuth, setShowAuth] = useState(false)
   const [mounted, setMounted]   = useState(false)
 
@@ -56,11 +54,6 @@ export default function MyRecipesPage() {
     setRecipes(prev => prev.filter(r => r.id !== id))
   }
 
-  const handleEditSave = (updated: Recipe) => {
-    setRecipes(prev => prev.map(r => r.id === updated.id ? updated : r))
-    setEditing(null)
-  }
-
   const handleBack = async () => {
     await loadRecipes()
     setSelected(null)
@@ -68,12 +61,10 @@ export default function MyRecipesPage() {
 
   if (!mounted) return null
 
-  // ── Full recipe view ──
   if (selected) {
     return <RecipeView recipe={selected} onBack={handleBack} initialSaved={true} />
   }
 
-  // ── Not signed in ──
   if (!user) {
     return (
       <>
@@ -95,7 +86,6 @@ export default function MyRecipesPage() {
     )
   }
 
-  // ── Empty state ──
   if (recipes.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-3.5rem)] pb-12 text-center">
@@ -109,35 +99,22 @@ export default function MyRecipesPage() {
     )
   }
 
-  // ── Recipe grid ──
   return (
-    <>
-      <div className="py-8">
-        <div className="flex items-baseline justify-between mb-6">
-          <h1 className="font-display text-2xl font-bold text-text">My Recipes</h1>
-          <span className="text-sm text-muted">{recipes.length} saved</span>
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          {recipes.map(r => (
-            <RecipeCard
-              key={r.id}
-              recipe={r}
-              onClick={() => setSelected(r)}
-              onEdit={recipe => setEditing(recipe)}
-              onDelete={handleDelete}
-            />
-          ))}
-        </div>
+    <div className="py-8">
+      <div className="flex items-baseline justify-between mb-6">
+        <h1 className="font-display text-2xl font-bold text-text">My Recipes</h1>
+        <span className="text-sm text-muted">{recipes.length} saved</span>
       </div>
-
-      {editing && (
-        <EditModal
-          recipe={editing}
-          userId={user.id}
-          onClose={() => setEditing(null)}
-          onSave={handleEditSave}
-        />
-      )}
-    </>
+      <div className="grid grid-cols-2 gap-4">
+        {recipes.map(r => (
+          <RecipeCard
+            key={r.id}
+            recipe={r}
+            onClick={() => setSelected(r)}
+            onDelete={handleDelete}
+          />
+        ))}
+      </div>
+    </div>
   )
 }

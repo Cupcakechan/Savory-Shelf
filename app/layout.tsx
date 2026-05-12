@@ -16,7 +16,7 @@ const dmSans = DM_Sans({
 })
 
 export const metadata: Metadata = {
-  title: 'SavoryShelf',
+  title: 'SavoryShelf | by Cocolito Collective',
   description: 'Save and organise recipes from anywhere — by Cocolito Collective.',
 }
 
@@ -36,7 +36,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Nav />
         <main className="px-4 max-w-2xl mx-auto flex-1 w-full">{children}</main>
         <footer className="border-t border-border py-5 text-center mt-8">
-          <p className="text-xs text-subtle">by Cocolito Collective</p>
+          <p className="text-xs text-subtle">SavoryShelf by Cocolito Collective</p>
         </footer>
       </body>
     </html>

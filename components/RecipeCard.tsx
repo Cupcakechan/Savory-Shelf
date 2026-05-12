@@ -1,14 +1,13 @@
-import { Clock, Users, Pencil, Trash2 } from 'lucide-react'
+import { Clock, Users, Trash2 } from 'lucide-react'
 import { Recipe } from '@/lib/types'
 
 interface Props {
   recipe: Recipe
   onClick: () => void
-  onEdit: (recipe: Recipe) => void
   onDelete: (id: string) => void
 }
 
-export default function RecipeCard({ recipe, onClick, onEdit, onDelete }: Props) {
+export default function RecipeCard({ recipe, onClick, onDelete }: Props) {
   return (
     <div className="relative group">
       <button
@@ -32,23 +31,14 @@ export default function RecipeCard({ recipe, onClick, onEdit, onDelete }: Props)
         </div>
       </button>
 
-      {/* Hover actions */}
-      <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
-        <button
-          onClick={e => { e.stopPropagation(); onEdit(recipe) }}
-          title="Edit recipe"
-          className="p-1.5 rounded-lg bg-bg/80 backdrop-blur-sm border border-border text-muted hover:text-accent hover:border-accent/40 transition-all"
-        >
-          <Pencil size={13} />
-        </button>
-        <button
-          onClick={e => { e.stopPropagation(); if (confirm(`Delete "${recipe.title}"?`)) onDelete(recipe.id) }}
-          title="Delete recipe"
-          className="p-1.5 rounded-lg bg-bg/80 backdrop-blur-sm border border-border text-muted hover:text-highlight hover:border-highlight/40 transition-all"
-        >
-          <Trash2 size={13} />
-        </button>
-      </div>
+      {/* Delete button */}
+      <button
+        onClick={e => { e.stopPropagation(); if (confirm(`Delete "${recipe.title}"?`)) onDelete(recipe.id) }}
+        title="Delete recipe"
+        className="absolute top-2 right-2 p-1.5 rounded-lg bg-bg/80 backdrop-blur-sm border border-border text-muted hover:text-highlight hover:border-highlight/40 opacity-0 group-hover:opacity-100 transition-all"
+      >
+        <Trash2 size={13} />
+      </button>
     </div>
   )
 }

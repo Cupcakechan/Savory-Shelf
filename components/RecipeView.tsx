@@ -3,12 +3,13 @@
 import { useState, useEffect } from 'react'
 import {
   Clock, Users, Check, Bookmark, BookmarkCheck, ChevronLeft,
-  ExternalLink, Pencil, Minus, Plus, Languages, Sparkles, X,
+  ExternalLink, NotebookPen, Share2, Minus, Plus, Languages,
+  Sparkles, X,
 } from 'lucide-react'
 import type { User } from '@supabase/supabase-js'
 import { Recipe } from '@/lib/types'
 import { supabase, toDbRecipe } from '@/lib/supabase'
-import EditModal from './EditModal'
+import KitchenNotesModal from './KitchenNotesModal'
 import AuthModal from './AuthModal'
 
 // ── Ingredient scaling ────────────────────────────────────
@@ -67,26 +68,77 @@ function ComingSoonModal({ onClose }: { onClose: () => void }) {
   )
 }
 
+// ── Share Modal ───────────────────────────────────────────
+
+function ShareModal({ url, onClose }: { url: string; onClose: () => void }) {
+  const [copied, setCopied] = useState(false)
+
+  const copy = () => {
+    navigator.clipboard.writeText(url)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-bg border border-border rounded-2xl p-8 max-w-sm w-full shadow-2xl">
+        <button onClick={onClose} className="absolute top-4 right-4 p-1.5 rounded-lg text-muted hover:text-text hover:bg-surface transition-colors">
+          <X size={16} />
+        </button>
+        <div className="w-12 h-12 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center mb-5">
+          <Share2 size={20} className="text-accent" />
+        </div>
+        <h3 className="font-display text-xl font-bold text-text mb-1">Share Recipe</h3>
+        <p className="text-sm text-muted mb-5 leading-relaxed">
+          Anyone with this link can view this recipe — no sign-in required.
+        </p>
+        <div className="flex items-center gap-2 bg-surface border border-border rounded-xl px-3 py-2.5 mb-5">
+          <span className="text-xs text-text flex-1 truncate">{url}</span>
+          <button
+            onClick={copy}
+            className="text-xs font-semibold text-accent hover:text-accent/80 flex-shrink-0 transition-colors"
+          >
+            {copied ? '✓ Copied!' : 'Copy link'}
+          </button>
+        </div>
+        <button onClick={onClose} className="w-full py-3 rounded-xl bg-accent text-white font-semibold text-sm hover:bg-accent/90 active:scale-[.98] transition-all">
+          Done
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ── Main Component ────────────────────────────────────────
 
 interface Props {
   recipe: Recipe
   onBack?: () => void
   initialSaved?: boolean
+  readOnly?: boolean
 }
 
-export default function RecipeView({ recipe: initialRecipe, onBack, initialSaved = false }: Props) {
-  const [recipe, setRecipe]           = useState(initialRecipe)
-  const baseServings                  = recipe.servings ?? 4
-  const [servings, setServings]       = useState(baseServings)
-  const [checked, setChecked]         = useState<Set<number>>(new Set())
-  const [saved, setSaved]             = useState(initialSaved)
-  const [user, setUser]               = useState<User | null>(null)
-  const [showEdit, setShowEdit]       = useState(false)
+export default function RecipeView({
+  recipe: initialRecipe,
+  onBack,
+  initialSaved = false,
+  readOnly = false,
+}: Props) {
+  const [recipe, setRecipe]               = useState(initialRecipe)
+  const baseServings                      = recipe.servings ?? 4
+  const [servings, setServings]           = useState(baseServings)
+  const [checked, setChecked]             = useState<Set<number>>(new Set())
+  const [saved, setSaved]                 = useState(initialSaved)
+  const [user, setUser]                   = useState<User | null>(null)
+  const [showNotes, setShowNotes]         = useState(false)
   const [showComingSoon, setShowComingSoon] = useState(false)
-  const [showAuth, setShowAuth]       = useState(false)
+  const [showShare, setShowShare]         = useState(false)
+  const [shareUrl, setShareUrl]           = useState('')
+  const [showAuth, setShowAuth]           = useState(false)
 
   useEffect(() => {
+    if (readOnly) return
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       setUser(session?.user ?? null)
       if (session?.user && !initialSaved) {
@@ -99,7 +151,7 @@ export default function RecipeView({ recipe: initialRecipe, onBack, initialSaved
       setUser(session?.user ?? null)
     })
     return () => subscription.unsubscribe()
-  }, [recipe.id, initialSaved])
+  }, [recipe.id, initialSaved, readOnly])
 
   const multiplier = servings / baseServings
 
@@ -121,10 +173,16 @@ export default function RecipeView({ recipe: initialRecipe, onBack, initialSaved
     }
   }
 
-  const handleEditSave = (updated: Recipe) => {
-    setRecipe(updated)
-    setServings(updated.servings ?? baseServings)
-    setChecked(new Set())
+  const handleShare = async () => {
+    if (!user) { setShowAuth(true); return }
+    if (!saved) {
+      await supabase.from('recipes').insert({ ...toDbRecipe(recipe, user.id), is_public: true })
+      setSaved(true)
+    } else {
+      await supabase.from('recipes').update({ is_public: true }).eq('id', recipe.id)
+    }
+    setShareUrl(`${window.location.origin}/share/${recipe.id}`)
+    setShowShare(true)
   }
 
   return (
@@ -143,22 +201,31 @@ export default function RecipeView({ recipe: initialRecipe, onBack, initialSaved
           </div>
         )}
 
+        {/* Title + action buttons */}
         <div className="flex items-start justify-between gap-3 mb-5">
-          <h1 className="font-display text-3xl md:text-4xl font-bold text-text leading-tight flex-1">{recipe.title}</h1>
-          <div className="flex items-center gap-2 mt-1 flex-shrink-0">
-            <button onClick={() => setShowEdit(true)} title="Edit recipe" className="p-2.5 rounded-xl border border-border text-muted hover:border-accent/40 hover:text-accent transition-all">
-              <Pencil size={16} />
-            </button>
-            <button
-              onClick={toggleSave}
-              title={saved ? 'Remove from My Recipes' : 'Save to My Recipes'}
-              className={`p-2.5 rounded-xl border transition-all ${saved ? 'bg-accent border-accent text-white' : 'border-border text-muted hover:border-accent hover:text-accent'}`}
-            >
-              {saved ? <BookmarkCheck size={16} /> : <Bookmark size={16} />}
-            </button>
-          </div>
+          <h1 className="font-display text-3xl md:text-4xl font-bold text-text leading-tight flex-1">
+            {recipe.title}
+          </h1>
+          {!readOnly && (
+            <div className="flex items-center gap-2 mt-1 flex-shrink-0">
+              <button onClick={() => setShowNotes(true)} title="My Kitchen Notes" className="p-2.5 rounded-xl border border-border text-muted hover:border-accent/40 hover:text-accent transition-all">
+                <NotebookPen size={16} />
+              </button>
+              <button onClick={handleShare} title="Share recipe" className="p-2.5 rounded-xl border border-border text-muted hover:border-accent/40 hover:text-accent transition-all">
+                <Share2 size={16} />
+              </button>
+              <button
+                onClick={toggleSave}
+                title={saved ? 'Remove from My Recipes' : 'Save to My Recipes'}
+                className={`p-2.5 rounded-xl border transition-all ${saved ? 'bg-accent border-accent text-white' : 'border-border text-muted hover:border-accent hover:text-accent'}`}
+              >
+                {saved ? <BookmarkCheck size={16} /> : <Bookmark size={16} />}
+              </button>
+            </div>
+          )}
         </div>
 
+        {/* Badges */}
         {(recipe.prepTime || recipe.cookTime || recipe.servings) && (
           <div className="flex flex-wrap gap-2 mb-8">
             {recipe.prepTime && <Chip icon={<Clock size={13} />} label={`Prep ${recipe.prepTime}`} />}
@@ -192,16 +259,19 @@ export default function RecipeView({ recipe: initialRecipe, onBack, initialSaved
           </div>
         )}
 
-        {/* AI buttons */}
-        <div className="flex gap-3 mb-9">
-          <button onClick={() => setShowComingSoon(true)} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border border-border text-sm font-medium text-muted hover:border-accent/40 hover:text-text transition-all active:scale-[.98]">
-            <Languages size={15} />Translate to English
-          </button>
-          <button onClick={() => setShowComingSoon(true)} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border border-border text-sm font-medium text-muted hover:border-accent/40 hover:text-text transition-all active:scale-[.98]">
-            <Sparkles size={15} />Suggest Substitutes
-          </button>
-        </div>
+        {/* AI buttons — hidden in readOnly */}
+        {!readOnly && (
+          <div className="flex gap-3 mb-9">
+            <button onClick={() => setShowComingSoon(true)} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border border-border text-sm font-medium text-muted hover:border-accent/40 hover:text-text transition-all active:scale-[.98]">
+              <Languages size={15} />Translate to English
+            </button>
+            <button onClick={() => setShowComingSoon(true)} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border border-border text-sm font-medium text-muted hover:border-accent/40 hover:text-text transition-all active:scale-[.98]">
+              <Sparkles size={15} />Suggest Substitutes
+            </button>
+          </div>
+        )}
 
+        {/* Ingredients */}
         <Section title="Ingredients">
           <ul className="space-y-1">
             {recipe.ingredients.map((ing, i) => (
@@ -217,6 +287,7 @@ export default function RecipeView({ recipe: initialRecipe, onBack, initialSaved
           </ul>
         </Section>
 
+        {/* Instructions */}
         <Section title="Instructions">
           <ol className="space-y-5">
             {recipe.instructions.map((step, i) => (
@@ -228,9 +299,10 @@ export default function RecipeView({ recipe: initialRecipe, onBack, initialSaved
           </ol>
         </Section>
 
+        {/* Kitchen Notes — shown when notes exist */}
         {recipe.notes && (
-          <Section title="Notes">
-            <p className="text-sm leading-relaxed text-text whitespace-pre-wrap">{recipe.notes}</p>
+          <Section title="My Kitchen Notes">
+            <p className="text-sm leading-relaxed text-muted italic whitespace-pre-wrap">{recipe.notes}</p>
           </Section>
         )}
 
@@ -241,9 +313,18 @@ export default function RecipeView({ recipe: initialRecipe, onBack, initialSaved
         )}
       </article>
 
-      {showEdit     && <EditModal recipe={recipe} userId={user?.id} onClose={() => setShowEdit(false)} onSave={handleEditSave} />}
+      {showNotes && (
+        <KitchenNotesModal
+          recipe={recipe}
+          userId={user?.id}
+          isSaved={saved}
+          onClose={() => setShowNotes(false)}
+          onSave={notes => setRecipe(r => ({ ...r, notes: notes || undefined }))}
+        />
+      )}
       {showComingSoon && <ComingSoonModal onClose={() => setShowComingSoon(false)} />}
-      {showAuth     && <AuthModal onClose={() => setShowAuth(false)} />}
+      {showShare     && <ShareModal url={shareUrl} onClose={() => setShowShare(false)} />}
+      {showAuth      && <AuthModal onClose={() => setShowAuth(false)} />}
     </>
   )
 }

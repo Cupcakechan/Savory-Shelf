@@ -28,7 +28,7 @@ export default function AuthModal({ onClose }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-bg border border-border rounded-2xl p-8 max-w-sm w-full shadow-2xl">
+      <div className="relative bg-bg border border-border rounded-2xl px-8 pt-10 pb-8 max-w-sm w-full shadow-2xl max-h-[90vh] overflow-y-auto">
         <button onClick={onClose} className="absolute top-4 right-4 p-1.5 rounded-lg text-muted hover:text-text hover:bg-surface transition-colors">
           <X size={16} />
         </button>
@@ -52,7 +52,7 @@ export default function AuthModal({ onClose }: Props) {
               <Mail size={22} className="text-accent" />
             </div>
             <h3 className="font-display text-xl font-bold text-text mb-1">Sign in to SavoryShelf</h3>
-            <p className="text-sm text-muted mb-6 leading-relaxed">
+            <p className="text-sm text-muted mb-5 leading-relaxed">
               Enter your email — we'll send a magic link. No password needed.
             </p>
             <input
@@ -61,9 +61,13 @@ export default function AuthModal({ onClose }: Props) {
               onChange={e => setEmail(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && send()}
               placeholder="you@example.com"
-              className="input mb-3"
+              className="input mb-2"
               autoFocus
             />
+            {/* Privacy disclaimer */}
+            <p className="text-xs text-subtle mb-4 leading-relaxed">
+              We never sell or share your email. It's only used to securely save your recipes in the cloud.
+            </p>
             {error && <p className="text-xs text-highlight mb-3">{error}</p>}
             <button
               onClick={send}
