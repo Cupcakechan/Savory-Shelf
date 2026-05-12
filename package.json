@@ -14,7 +14,7 @@
     "react-dom": "^19.0.0",
     "lucide-react": "^0.454.0",
     "@supabase/supabase-js": "^2.45.4",
-    "ai": "^4.0.0",
+    "ai": "^5.0.0",
     "@ai-sdk/xai": "^3.0.0"
   },
   "devDependencies": {
