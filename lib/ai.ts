@@ -1,18 +1,17 @@
 'use server'
 
 import { generateText } from 'ai'
-import { xai } from '@ai-sdk/xai'
+import { createXai } from '@ai-sdk/xai'
 import type { Recipe } from './types'
 
 // ─────────────────────────────────────────────────────────────
 // Required environment variable: XAI_API_KEY
-//   • Local dev: add  XAI_API_KEY=xai-...  to .env.local
-//   • Vercel:    Settings → Environment Variables → XAI_API_KEY
+//   • Local dev:  add  XAI_API_KEY=xai-...  to .env.local
+//   • Vercel:     Settings → Environment Variables → XAI_API_KEY
 //
 // Use XAI_API_KEY (NOT NEXT_PUBLIC_XAI_API_KEY).
-// This file is a Server Action — it runs on the server only,
-// so the key is never exposed to the browser.
-// Get your API key at: https://console.x.ai
+// This file runs server-side only — the key never reaches the browser.
+// Get your key at: https://console.x.ai
 // ─────────────────────────────────────────────────────────────
 
 // ── System prompts ────────────────────────────────────────
@@ -49,6 +48,14 @@ Return ONLY a valid JSON object — no markdown, no code fences, no commentary o
 {"substitutes":[{"original":"ingredient name","substitutes":["swap 1 (note)","swap 2 (note)"]}],"note":"overall tip or empty string"}`
 
 // ── Helpers ───────────────────────────────────────────────
+
+function getModel() {
+  if (!process.env.XAI_API_KEY) {
+    throw new Error('XAI_API_KEY is not set. Add it to your Vercel environment variables.')
+  }
+  const xai = createXai({ apiKey: process.env.XAI_API_KEY })
+  return xai('grok-3')
+}
 
 function parseJson<T>(raw: string): T {
   const cleaned = raw
@@ -90,18 +97,19 @@ export async function translateRecipe(
       `Instructions:\n${recipe.instructions.map((s, i) => `${i + 1}. ${s}`).join('\n')}`
 
     const { text } = await generateText({
-      model: xai('grok-beta'),
+      model: getModel(),
       system: TRANSLATE_SYSTEM,
       prompt,
     })
 
     return { result: parseJson<TranslateResult>(text) }
   } catch (err) {
+    console.error('[translateRecipe] error:', err)
+    const msg = err instanceof Error ? err.message : String(err)
+    if (msg.includes('XAI_API_KEY')) return { error: msg }
     return {
       error:
-        err instanceof Error
-          ? err.message
-          : 'Translation failed. Please try again.',
+        'Translation failed — please check your XAI_API_KEY in Vercel settings or try again later.',
     }
   }
 }
@@ -116,18 +124,19 @@ export async function suggestSubstitutes(
       `Please suggest easy supermarket substitutes for any uncommon or hard-to-find ingredients.`
 
     const { text } = await generateText({
-      model: xai('grok-beta'),
+      model: getModel(),
       system: SUBSTITUTES_SYSTEM,
       prompt,
     })
 
     return { result: parseJson<SubstitutesResult>(text) }
   } catch (err) {
+    console.error('[suggestSubstitutes] error:', err)
+    const msg = err instanceof Error ? err.message : String(err)
+    if (msg.includes('XAI_API_KEY')) return { error: msg }
     return {
       error:
-        err instanceof Error
-          ? err.message
-          : 'Could not generate substitutes. Please try again.',
+        'Could not generate substitutes — please check your XAI_API_KEY in Vercel settings or try again later.',
     }
   }
 }
