@@ -4,11 +4,15 @@ import { useState, useEffect } from 'react'
 import {
   Clock, Users, Check, Bookmark, BookmarkCheck, ChevronLeft,
   ExternalLink, NotebookPen, Share2, Minus, Plus, Languages,
-  Sparkles, X,
+  Sparkles, X, CheckCircle,
 } from 'lucide-react'
 import type { User } from '@supabase/supabase-js'
 import { Recipe } from '@/lib/types'
 import { supabase, toDbRecipe } from '@/lib/supabase'
+import {
+  translateRecipe, suggestSubstitutes,
+  type TranslateResult, type SubstitutesResult,
+} from '@/lib/ai'
 import KitchenNotesModal from './KitchenNotesModal'
 import AuthModal from './AuthModal'
 
@@ -41,70 +45,196 @@ function scaleIngredient(text: string, multiplier: number): string {
   )
 }
 
-// ── Coming Soon Modal ─────────────────────────────────────
-
-function ComingSoonModal({ onClose }: { onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-bg border border-border rounded-2xl p-8 max-w-sm w-full shadow-2xl text-center">
-        <button onClick={onClose} className="absolute top-4 right-4 p-1.5 rounded-lg text-muted hover:text-text hover:bg-surface transition-colors">
-          <X size={16} />
-        </button>
-        <div className="w-14 h-14 rounded-2xl bg-accent/10 border border-accent/20 flex items-center justify-center mx-auto mb-5">
-          <Sparkles size={26} className="text-accent" />
-        </div>
-        <h3 className="font-display text-xl font-bold text-text mb-3">Coming in the next update</h3>
-        <p className="text-sm text-muted leading-relaxed mb-7">
-          AI-powered translation &amp; smart ingredient substitutes are on the way!
-          We'll use an LLM to translate the entire recipe into English and suggest
-          easy local swaps for hard-to-find ingredients.
-        </p>
-        <button onClick={onClose} className="w-full py-3 rounded-xl bg-accent text-white font-semibold text-sm hover:bg-accent/90 active:scale-[.98] transition-all">
-          Can't wait!
-        </button>
-      </div>
-    </div>
-  )
-}
-
 // ── Share Modal ───────────────────────────────────────────
 
 function ShareModal({ url, onClose }: { url: string; onClose: () => void }) {
   const [copied, setCopied] = useState(false)
-
   const copy = () => {
     navigator.clipboard.writeText(url)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-bg border border-border rounded-2xl p-8 max-w-sm w-full shadow-2xl">
-        <button onClick={onClose} className="absolute top-4 right-4 p-1.5 rounded-lg text-muted hover:text-text hover:bg-surface transition-colors">
-          <X size={16} />
-        </button>
+        <button onClick={onClose} className="absolute top-4 right-4 p-1.5 rounded-lg text-muted hover:text-text hover:bg-surface transition-colors"><X size={16} /></button>
         <div className="w-12 h-12 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center mb-5">
           <Share2 size={20} className="text-accent" />
         </div>
         <h3 className="font-display text-xl font-bold text-text mb-1">Share Recipe</h3>
-        <p className="text-sm text-muted mb-5 leading-relaxed">
-          Anyone with this link can view this recipe — no sign-in required.
-        </p>
+        <p className="text-sm text-muted mb-5 leading-relaxed">Anyone with this link can view this recipe — no sign-in required.</p>
         <div className="flex items-center gap-2 bg-surface border border-border rounded-xl px-3 py-2.5 mb-5">
           <span className="text-xs text-text flex-1 truncate">{url}</span>
-          <button
-            onClick={copy}
-            className="text-xs font-semibold text-accent hover:text-accent/80 flex-shrink-0 transition-colors"
-          >
+          <button onClick={copy} className="text-xs font-semibold text-accent hover:text-accent/80 flex-shrink-0 transition-colors">
             {copied ? '✓ Copied!' : 'Copy link'}
           </button>
         </div>
-        <button onClick={onClose} className="w-full py-3 rounded-xl bg-accent text-white font-semibold text-sm hover:bg-accent/90 active:scale-[.98] transition-all">
-          Done
-        </button>
+        <button onClick={onClose} className="w-full py-3 rounded-xl bg-accent text-white font-semibold text-sm hover:bg-accent/90 active:scale-[.98] transition-all">Done</button>
+      </div>
+    </div>
+  )
+}
+
+// ── AI Loading Modal ──────────────────────────────────────
+
+function AiLoadingModal() {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div className="bg-bg border border-border rounded-2xl p-10 max-w-xs w-full text-center shadow-2xl">
+        <div className="text-5xl mb-4 animate-pulse select-none">🐱</div>
+        <p className="font-display text-lg font-bold text-text mb-1">Thinking with Grok…</p>
+        <p className="text-xs text-muted">This may take a few seconds</p>
+      </div>
+    </div>
+  )
+}
+
+// ── AI Error Modal ────────────────────────────────────────
+
+function AiErrorModal({ message, onClose }: { message: string; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-bg border border-border rounded-2xl p-8 max-w-sm w-full shadow-2xl text-center">
+        <button onClick={onClose} className="absolute top-4 right-4 p-1.5 rounded-lg text-muted hover:text-text hover:bg-surface transition-colors"><X size={16} /></button>
+        <div className="text-4xl mb-4 select-none">⚠️</div>
+        <h3 className="font-display text-lg font-bold text-text mb-2">Something went wrong</h3>
+        <p className="text-sm text-muted leading-relaxed mb-6">{message}</p>
+        <button onClick={onClose} className="w-full py-3 rounded-xl bg-surface border border-border text-sm font-medium text-text hover:border-accent/40 transition-colors">Close</button>
+      </div>
+    </div>
+  )
+}
+
+// ── Translate Result Modal ────────────────────────────────
+
+function TranslateModal({
+  result, onClose, onApply, applied,
+}: {
+  result: TranslateResult
+  onClose: () => void
+  onApply: () => void
+  applied: boolean
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-bg border border-border rounded-2xl max-w-lg w-full shadow-2xl flex flex-col max-h-[88vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-border flex-shrink-0">
+          <div className="flex items-center gap-2.5">
+            <Languages size={17} className="text-accent" />
+            <h3 className="font-display text-lg font-bold text-text">Translated Recipe</h3>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-muted hover:text-text hover:bg-surface transition-colors"><X size={16} /></button>
+        </div>
+
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+          <h4 className="font-display text-xl font-bold text-text leading-snug">{result.title}</h4>
+
+          <div>
+            <p className="text-xs font-semibold text-muted uppercase tracking-widest mb-2">Ingredients</p>
+            <ul className="space-y-1.5">
+              {result.ingredients.map((ing, i) => (
+                <li key={i} className="flex items-start gap-2 text-sm text-text">
+                  <span className="text-accent mt-0.5 flex-shrink-0">•</span>{ing}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div>
+            <p className="text-xs font-semibold text-muted uppercase tracking-widest mb-2">Instructions</p>
+            <ol className="space-y-3">
+              {result.instructions.map((step, i) => (
+                <li key={i} className="flex gap-3">
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent/15 text-accent text-xs font-bold flex items-center justify-center mt-0.5 border border-accent/20">{i + 1}</span>
+                  <p className="text-sm leading-relaxed text-text pt-0.5">{step}</p>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="px-6 py-5 border-t border-border flex-shrink-0 flex gap-3">
+          <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-border text-sm font-medium text-muted hover:text-text hover:border-accent/40 transition-colors">
+            Close
+          </button>
+          <button
+            onClick={onApply}
+            disabled={applied}
+            className="flex-1 py-3 rounded-xl bg-accent text-white text-sm font-semibold hover:bg-accent/90 disabled:opacity-70 active:scale-[.98] transition-all flex items-center justify-center gap-2"
+          >
+            {applied ? <><CheckCircle size={15} />Saved!</> : 'Apply as new recipe'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Substitutes Result Modal ──────────────────────────────
+
+function SubstitutesModal({
+  result, onClose, onCopyToNotes, copied,
+}: {
+  result: SubstitutesResult
+  onClose: () => void
+  onCopyToNotes: () => void
+  copied: boolean
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-bg border border-border rounded-2xl max-w-md w-full shadow-2xl flex flex-col max-h-[88vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-border flex-shrink-0">
+          <div className="flex items-center gap-2.5">
+            <Sparkles size={17} className="text-accent" />
+            <h3 className="font-display text-lg font-bold text-text">Ingredient Substitutes</h3>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-muted hover:text-text hover:bg-surface transition-colors"><X size={16} /></button>
+        </div>
+
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+          {result.substitutes.length === 0 ? (
+            <p className="text-sm text-muted italic">All ingredients in this recipe are commonly available — no substitutes needed!</p>
+          ) : (
+            result.substitutes.map((item, i) => (
+              <div key={i} className="bg-surface border border-border rounded-xl p-4">
+                <p className="text-sm font-semibold text-text mb-2">{item.original}</p>
+                <ul className="space-y-1.5">
+                  {item.substitutes.map((sub, j) => (
+                    <li key={j} className="flex items-start gap-2 text-sm text-muted">
+                      <span className="text-accent flex-shrink-0 mt-0.5">→</span>{sub}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))
+          )}
+          {result.note && (
+            <p className="text-xs text-muted italic leading-relaxed pt-1">{result.note}</p>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="px-6 py-5 border-t border-border flex-shrink-0 flex gap-3">
+          <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-border text-sm font-medium text-muted hover:text-text hover:border-accent/40 transition-colors">
+            Close
+          </button>
+          <button
+            onClick={onCopyToNotes}
+            disabled={copied}
+            className="flex-1 py-3 rounded-xl bg-accent text-white text-sm font-semibold hover:bg-accent/90 disabled:opacity-70 active:scale-[.98] transition-all flex items-center justify-center gap-2"
+          >
+            {copied ? <><CheckCircle size={15} />Copied!</> : 'Copy to Kitchen Notes'}
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -132,18 +262,23 @@ export default function RecipeView({
   const [saved, setSaved]                 = useState(initialSaved)
   const [user, setUser]                   = useState<User | null>(null)
   const [showNotes, setShowNotes]         = useState(false)
-  const [showComingSoon, setShowComingSoon] = useState(false)
   const [showShare, setShowShare]         = useState(false)
   const [shareUrl, setShareUrl]           = useState('')
   const [showAuth, setShowAuth]           = useState(false)
+  // AI state
+  const [aiLoading, setAiLoading]               = useState(false)
+  const [aiError, setAiError]                   = useState('')
+  const [translateResult, setTranslateResult]   = useState<TranslateResult | null>(null)
+  const [translateApplied, setTranslateApplied] = useState(false)
+  const [substitutesResult, setSubstitutesResult] = useState<SubstitutesResult | null>(null)
+  const [substitutesCopied, setSubstitutesCopied] = useState(false)
 
   useEffect(() => {
     if (readOnly) return
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       setUser(session?.user ?? null)
       if (session?.user && !initialSaved) {
-        const { data } = await supabase
-          .from('recipes').select('id').eq('id', recipe.id).maybeSingle()
+        const { data } = await supabase.from('recipes').select('id').eq('id', recipe.id).maybeSingle()
         setSaved(!!data)
       }
     })
@@ -156,11 +291,7 @@ export default function RecipeView({
   const multiplier = servings / baseServings
 
   const toggleCheck = (i: number) =>
-    setChecked(prev => {
-      const next = new Set(prev)
-      next.has(i) ? next.delete(i) : next.add(i)
-      return next
-    })
+    setChecked(prev => { const next = new Set(prev); next.has(i) ? next.delete(i) : next.add(i); return next })
 
   const toggleSave = async () => {
     if (!user) { setShowAuth(true); return }
@@ -185,6 +316,60 @@ export default function RecipeView({
     setShowShare(true)
   }
 
+  // ── AI handlers ────────────────────────────────────────
+
+  const handleTranslate = async () => {
+    setAiLoading(true)
+    const { result, error } = await translateRecipe(recipe)
+    setAiLoading(false)
+    if (error) setAiError(error)
+    else if (result) setTranslateResult(result)
+  }
+
+  const handleSubstitutes = async () => {
+    setAiLoading(true)
+    const { result, error } = await suggestSubstitutes(recipe)
+    setAiLoading(false)
+    if (error) setAiError(error)
+    else if (result) setSubstitutesResult(result)
+  }
+
+  const applyTranslation = async () => {
+    if (!translateResult) return
+    const newRecipe: Recipe = {
+      ...recipe,
+      id: crypto.randomUUID(),
+      title: `${translateResult.title} (translated)`,
+      ingredients: translateResult.ingredients,
+      instructions: translateResult.instructions,
+      savedAt: undefined,
+    }
+    if (user) {
+      await supabase.from('recipes').insert(toDbRecipe(newRecipe, user.id))
+    }
+    setTranslateApplied(true)
+    setTimeout(() => { setTranslateApplied(false); setTranslateResult(null) }, 1800)
+  }
+
+  const copySubstitutesToNotes = async () => {
+    if (!substitutesResult) return
+    const block = [
+      '── Ingredient Substitutes ──',
+      ...substitutesResult.substitutes.map(s =>
+        `${s.original}:\n  → ${s.substitutes.join('\n  → ')}`
+      ),
+      substitutesResult.note ? `\nNote: ${substitutesResult.note}` : '',
+    ].filter(Boolean).join('\n\n')
+
+    const fullNotes = recipe.notes ? `${recipe.notes}\n\n${block}` : block
+    if (user && saved) {
+      await supabase.from('recipes').update({ notes: fullNotes }).eq('id', recipe.id)
+    }
+    setRecipe(r => ({ ...r, notes: fullNotes }))
+    setSubstitutesCopied(true)
+    setTimeout(() => { setSubstitutesCopied(false); setSubstitutesResult(null) }, 1800)
+  }
+
   return (
     <>
       <article className="pb-20">
@@ -203,9 +388,7 @@ export default function RecipeView({
 
         {/* Title + action buttons */}
         <div className="flex items-start justify-between gap-3 mb-5">
-          <h1 className="font-display text-3xl md:text-4xl font-bold text-text leading-tight flex-1">
-            {recipe.title}
-          </h1>
+          <h1 className="font-display text-3xl md:text-4xl font-bold text-text leading-tight flex-1">{recipe.title}</h1>
           {!readOnly && (
             <div className="flex items-center gap-2 mt-1 flex-shrink-0">
               <button onClick={() => setShowNotes(true)} title="My Kitchen Notes" className="p-2.5 rounded-xl border border-border text-muted hover:border-accent/40 hover:text-accent transition-all">
@@ -247,9 +430,7 @@ export default function RecipeView({
                 </span>
                 <span className="text-xs text-subtle">(original: {baseServings} serving{baseServings !== 1 ? 's' : ''})</span>
                 {servings !== baseServings && (
-                  <button onClick={() => setServings(baseServings)} className="text-xs text-accent hover:underline mt-1 transition-colors">
-                    Reset to original
-                  </button>
+                  <button onClick={() => setServings(baseServings)} className="text-xs text-accent hover:underline mt-1 transition-colors">Reset to original</button>
                 )}
               </div>
               <button onClick={() => setServings(s => s + 1)} aria-label="Increase servings" className="w-24 flex items-center justify-center border-l border-border text-muted hover:bg-border/40 hover:text-text transition-colors active:bg-border">
@@ -259,13 +440,13 @@ export default function RecipeView({
           </div>
         )}
 
-        {/* AI buttons — hidden in readOnly */}
+        {/* AI buttons */}
         {!readOnly && (
           <div className="flex gap-3 mb-9">
-            <button onClick={() => setShowComingSoon(true)} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border border-border text-sm font-medium text-muted hover:border-accent/40 hover:text-text transition-all active:scale-[.98]">
+            <button onClick={handleTranslate} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border border-border text-sm font-medium text-muted hover:border-accent/40 hover:text-text transition-all active:scale-[.98]">
               <Languages size={15} />Translate to English
             </button>
-            <button onClick={() => setShowComingSoon(true)} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border border-border text-sm font-medium text-muted hover:border-accent/40 hover:text-text transition-all active:scale-[.98]">
+            <button onClick={handleSubstitutes} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border border-border text-sm font-medium text-muted hover:border-accent/40 hover:text-text transition-all active:scale-[.98]">
               <Sparkles size={15} />Suggest Substitutes
             </button>
           </div>
@@ -299,7 +480,7 @@ export default function RecipeView({
           </ol>
         </Section>
 
-        {/* Kitchen Notes — shown when notes exist */}
+        {/* Kitchen Notes */}
         {recipe.notes && (
           <Section title="My Kitchen Notes">
             <p className="text-sm leading-relaxed text-muted italic whitespace-pre-wrap">{recipe.notes}</p>
@@ -313,18 +494,20 @@ export default function RecipeView({
         )}
       </article>
 
+      {/* Modals */}
       {showNotes && (
-        <KitchenNotesModal
-          recipe={recipe}
-          userId={user?.id}
-          isSaved={saved}
-          onClose={() => setShowNotes(false)}
-          onSave={notes => setRecipe(r => ({ ...r, notes: notes || undefined }))}
-        />
+        <KitchenNotesModal recipe={recipe} userId={user?.id} isSaved={saved} onClose={() => setShowNotes(false)} onSave={notes => setRecipe(r => ({ ...r, notes: notes || undefined }))} />
       )}
-      {showComingSoon && <ComingSoonModal onClose={() => setShowComingSoon(false)} />}
       {showShare     && <ShareModal url={shareUrl} onClose={() => setShowShare(false)} />}
       {showAuth      && <AuthModal onClose={() => setShowAuth(false)} />}
+      {aiLoading     && <AiLoadingModal />}
+      {aiError       && <AiErrorModal message={aiError} onClose={() => setAiError('')} />}
+      {translateResult && (
+        <TranslateModal result={translateResult} onClose={() => setTranslateResult(null)} onApply={applyTranslation} applied={translateApplied} />
+      )}
+      {substitutesResult && (
+        <SubstitutesModal result={substitutesResult} onClose={() => setSubstitutesResult(null)} onCopyToNotes={copySubstitutesToNotes} copied={substitutesCopied} />
+      )}
     </>
   )
 }
