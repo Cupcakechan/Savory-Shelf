@@ -54,9 +54,9 @@ export default function MyRecipesPage() {
     setRecipes(prev => prev.filter(r => r.id !== id))
   }
 
-  const handleBack = async () => {
-    await loadRecipes()
-    setSelected(null)
+  const handleBack = () => {
+    setSelected(null)   // instant — user sees the grid immediately
+    loadRecipes()       // refresh in background
   }
 
   if (!mounted) return null

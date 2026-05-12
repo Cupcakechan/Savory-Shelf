@@ -32,6 +32,15 @@ function formatTime(t: string | undefined): string {
   return t
 }
 
+/** Remove {tag} pollution from displayed titles without mutating the recipe object */
+function cleanTitle(title: string): string {
+  return title
+    .replace(/^\{[^}]+\}\s*/g, '')
+    .replace(/\s*\{[^}]+\}$/g, '')
+    .replace(/^\(\d+[^)]*\)\s*/gi, '')
+    .trim()
+}
+
 // ── Ingredient scaling ────────────────────────────────────
 
 function formatNum(n: number): string {
@@ -365,7 +374,7 @@ export default function RecipeView({
 
         {/* Title + action buttons */}
         <div className="flex items-start justify-between gap-3 mb-5">
-          <h1 className="font-display text-3xl md:text-4xl font-bold text-text leading-tight flex-1">{recipe.title}</h1>
+          <h1 className="font-display text-3xl md:text-4xl font-bold text-text leading-tight flex-1">{cleanTitle(recipe.title)}</h1>
           {!readOnly && (
             <div className="flex items-center gap-2 mt-1 flex-shrink-0">
               <button onClick={() => setShowNotes(true)} title="My Kitchen Notes" className="p-2.5 rounded-xl border border-border text-muted hover:border-accent/40 hover:text-accent transition-all">

@@ -7,9 +7,13 @@ interface Props {
   onDelete: (id: string) => void
 }
 
-/** Normalize any legacy {tag} → (tag) in titles */
+/** Remove {tag} count pollution from titles (e.g. "{3 Ingredient} Cookies" → "Cookies") */
 function cleanTitle(title: string): string {
-  return title.replace(/\{([^}]*)\}/g, '($1)')
+  return title
+    .replace(/^\{[^}]+\}\s*/g, '')   // Remove leading {tag}
+    .replace(/\s*\{[^}]+\}$/g, '')    // Remove trailing {tag}
+    .replace(/^\(\d+[^)]*\)\s*/gi, '') // Remove leading (N count) patterns
+    .trim()
 }
 
 /** "1 ingredient" / "12 ingredients" */

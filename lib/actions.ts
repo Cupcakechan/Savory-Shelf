@@ -64,6 +64,17 @@ function parseDuration(d: string): string {
   return d
 }
 
+/** Strip count prefixes/suffixes like "{3 Ingredient}" from recipe titles */
+function cleanRecipeTitle(raw: string): string {
+  return raw
+    .replace(/^\{[^}]+\}\s*/g, '')        // Remove leading {tag}
+    .replace(/\s*\{[^}]+\}$/g, '')         // Remove trailing {tag}
+    .replace(/^\(\d+[^)]*\)\s*/gi, '')     // Remove leading (N something) count pattern
+    .replace(/<[^>]+>/g, '')               // Strip any residual HTML
+    .replace(/\s{2,}/g, ' ')
+    .split('|')[0].split('–')[0].trim()
+}
+
 /** Strip HTML tags from a string */
 function stripTags(html: string): string {
   return html
@@ -146,7 +157,7 @@ function extractJsonLd(html: string): Recipe | null {
 
         return {
           id: crypto.randomUUID(),
-          title: String(item.name || 'Untitled Recipe'),
+          title: cleanRecipeTitle(String(item.name || 'Untitled Recipe')),
           image: typeof image === 'string' ? image : undefined,
           prepTime: parseDuration(String(item.prepTime || '')),
           cookTime: parseDuration(String(item.cookTime || '')),
@@ -199,7 +210,7 @@ function extractHtmlFallback(html: string): Recipe {
 
   return {
     id: crypto.randomUUID(),
-    title: stripTags(title).split('|')[0].split('–')[0].trim(),
+    title: cleanRecipeTitle(stripTags(title)),
     image,
     ingredients: ingredients.length
       ? ingredients
