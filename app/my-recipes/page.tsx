@@ -93,14 +93,22 @@ export default function MyRecipesPage() {
     [recipes, activeTag],
   )
 
-  // Step 2 — narrow further by search query (title or any ingredient)
+  // Step 2 — narrow further by search terms (AND logic, comma- or space-separated)
   const displayedRecipes = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return tagFilteredRecipes
-    return tagFilteredRecipes.filter(r =>
-      r.title.toLowerCase().includes(q) ||
-      r.ingredients.some(ing => ing.toLowerCase().includes(q)),
-    )
+    // Split on commas or whitespace, strip empty strings
+    const terms = search
+      .split(/[\s,]+/)
+      .map(t => t.trim().toLowerCase())
+      .filter(Boolean)
+
+    if (terms.length === 0) return tagFilteredRecipes
+
+    return tagFilteredRecipes.filter(r => {
+      // Build a single searchable string per recipe: title + all ingredients
+      const haystack = [r.title, ...r.ingredients].join(' ').toLowerCase()
+      // Every term must appear somewhere in that string (AND)
+      return terms.every(term => haystack.includes(term))
+    })
   }, [tagFilteredRecipes, search])
 
   const handleDelete = async (id: string) => {
