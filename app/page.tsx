@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { Link2, Loader2, AlertCircle, ClipboardPaste, ChevronLeft, Sparkles } from 'lucide-react'
 import { importRecipe } from '@/lib/actions'
 import { parseRecipeText } from '@/lib/ai'
@@ -18,17 +19,15 @@ const EXAMPLE_URLS = [
 interface ManualFormProps {
   onRecipe: (r: Recipe) => void
   onCancel: () => void
-  blockError?: string   // pre-populated context message when triggered by a block error
+  blockError?: string
 }
 
 function ManualPasteForm({ onRecipe, onCancel, blockError }: ManualFormProps) {
-  // Raw text for Grok parsing
   const [rawText, setRawText]   = useState('')
   const [parsing, setParsing]   = useState(false)
   const [parseMsg, setParseMsg] = useState('')
-  const [parsed, setParsed]     = useState(false)   // whether fields are populated
+  const [parsed, setParsed]     = useState(false)
 
-  // Editable recipe fields
   const [title, setTitle]                   = useState('')
   const [ingredientsText, setIngredients]   = useState('')
   const [instructionsText, setInstructions] = useState('')
@@ -63,22 +62,22 @@ function ManualPasteForm({ onRecipe, onCancel, blockError }: ManualFormProps) {
   }
 
   const handleSubmit = () => {
-    const trimmedTitle  = title.trim()
-    const ingredients   = ingredientsText.split('\n').map(s => s.trim()).filter(Boolean)
-    const instructions  = instructionsText.split('\n').map(s => s.trim()).filter(Boolean)
+    const trimmedTitle   = title.trim()
+    const ingredients    = ingredientsText.split('\n').map(s => s.trim()).filter(Boolean)
+    const instructions   = instructionsText.split('\n').map(s => s.trim()).filter(Boolean)
     const parsedServings = servings.trim() ? parseInt(servings.trim()) : undefined
 
     if (!trimmedTitle)       { setFormError('Please enter a recipe title.'); return }
     if (!ingredients.length) { setFormError('Please add at least one ingredient.'); return }
 
     const recipe: Recipe = {
-      id:          crypto.randomUUID(),
-      title:       trimmedTitle,
+      id:           crypto.randomUUID(),
+      title:        trimmedTitle,
       ingredients,
       instructions,
-      servings:    !isNaN(parsedServings ?? NaN) ? parsedServings : undefined,
-      prepTime:    prepTime.trim()  || undefined,
-      cookTime:    cookTime.trim()  || undefined,
+      servings:     !isNaN(parsedServings ?? NaN) ? parsedServings : undefined,
+      prepTime:     prepTime.trim()  || undefined,
+      cookTime:     cookTime.trim()  || undefined,
     }
     onRecipe(recipe)
   }
@@ -88,7 +87,6 @@ function ManualPasteForm({ onRecipe, onCancel, blockError }: ManualFormProps) {
 
   return (
     <div className="w-full max-w-lg">
-      {/* Back link */}
       <button
         onClick={onCancel}
         className="flex items-center gap-1.5 text-sm text-muted hover:text-text transition-colors mb-6"
@@ -105,7 +103,6 @@ function ManualPasteForm({ onRecipe, onCancel, blockError }: ManualFormProps) {
           </p>
         </div>
 
-        {/* Block-error context banner */}
         {blockError && (
           <div className="flex items-start gap-2.5 bg-bg border border-border rounded-xl px-4 py-3">
             <AlertCircle size={15} className="text-muted flex-shrink-0 mt-0.5" />
@@ -113,7 +110,6 @@ function ManualPasteForm({ onRecipe, onCancel, blockError }: ManualFormProps) {
           </div>
         )}
 
-        {/* ── Step 1: Raw paste + Grok ── */}
         <div>
           <label className={labelCls}>
             Full recipe text
@@ -122,7 +118,7 @@ function ManualPasteForm({ onRecipe, onCancel, blockError }: ManualFormProps) {
           <textarea
             value={rawText}
             onChange={e => setRawText(e.target.value)}
-            placeholder={"Paste the recipe here — a full web page copy, a photo transcript, or just your own notes. Grok will extract the title, ingredients, and steps."}
+            placeholder="Paste the recipe here — a full web page copy, a photo transcript, or just your own notes. Grok will extract the title, ingredients, and steps."
             rows={7}
             className={`${fieldCls} resize-none leading-relaxed`}
             autoFocus={!blockError}
@@ -145,13 +141,11 @@ function ManualPasteForm({ onRecipe, onCancel, blockError }: ManualFormProps) {
           <p className="text-xs text-muted leading-relaxed">{parseMsg}</p>
         )}
 
-        {/* ── Step 2: Editable fields (always visible, auto-filled after parse) ── */}
         <div className="border-t border-border pt-5 space-y-4">
           <p className="text-xs text-muted -mt-1">
             {parsed ? 'Review and edit the parsed recipe below.' : 'Or fill in the fields manually.'}
           </p>
 
-          {/* Title */}
           <div>
             <label className={labelCls}>Recipe Title *</label>
             <input
@@ -163,7 +157,6 @@ function ManualPasteForm({ onRecipe, onCancel, blockError }: ManualFormProps) {
             />
           </div>
 
-          {/* Ingredients */}
           <div>
             <label className={labelCls}>
               Ingredients *
@@ -178,7 +171,6 @@ function ManualPasteForm({ onRecipe, onCancel, blockError }: ManualFormProps) {
             />
           </div>
 
-          {/* Instructions */}
           <div>
             <label className={labelCls}>
               Instructions
@@ -193,7 +185,6 @@ function ManualPasteForm({ onRecipe, onCancel, blockError }: ManualFormProps) {
             />
           </div>
 
-          {/* Servings / Prep / Cook */}
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className={labelCls}>Servings</label>
@@ -209,7 +200,6 @@ function ManualPasteForm({ onRecipe, onCancel, blockError }: ManualFormProps) {
             </div>
           </div>
 
-          {/* Form error */}
           {formError && (
             <div className="flex items-center gap-2 text-sm text-highlight bg-highlight/10 border border-highlight/20 rounded-xl px-4 py-3">
               <AlertCircle size={15} className="flex-shrink-0" />
@@ -233,12 +223,13 @@ function ManualPasteForm({ onRecipe, onCancel, blockError }: ManualFormProps) {
 // ── Import page ───────────────────────────────────────────
 
 export default function ImportPage() {
-  const [url, setUrl]                     = useState('')
-  const [recipe, setRecipe]               = useState<Recipe | null>(null)
-  const [error, setError]                 = useState('')
-  const [showManual, setShowManual]       = useState(false)
-  const [blockError, setBlockError]       = useState('')
-  const [isPending, startTransition]      = useTransition()
+  const router                        = useRouter()
+  const [url, setUrl]                 = useState('')
+  const [recipe, setRecipe]           = useState<Recipe | null>(null)
+  const [error, setError]             = useState('')
+  const [showManual, setShowManual]   = useState(false)
+  const [blockError, setBlockError]   = useState('')
+  const [isPending, startTransition]  = useTransition()
 
   const handleImport = () => {
     if (!url.trim()) return
@@ -249,9 +240,7 @@ export default function ImportPage() {
         const isBlock =
           result.error.toLowerCase().includes('blocks automatic import') ||
           result.error.toLowerCase().includes('prevents automatic import')
-
         if (isBlock) {
-          // Auto-navigate to paste form with context
           setBlockError(result.error)
           setShowManual(true)
         } else {
@@ -267,12 +256,15 @@ export default function ImportPage() {
     if (e.key === 'Enter') handleImport()
   }
 
-  // ── Recipe view (post-import or manual entry) ──────────
+  // ── Recipe view ────────────────────────────────────────
   if (recipe) {
     return (
       <RecipeView
         recipe={recipe}
         onBack={() => {
+          // Bust the router cache now so My Recipes is guaranteed fresh
+          // whether the user navigates there via the nav or the back button.
+          router.refresh()
           setRecipe(null)
           setUrl('')
           setShowManual(false)
@@ -298,7 +290,6 @@ export default function ImportPage() {
   // ── Import form ────────────────────────────────────────
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-3.5rem)] pb-12">
-      {/* Wordmark */}
       <div className="mb-10 text-center">
         <h1 className="font-display text-4xl md:text-5xl font-bold text-text mb-3">
           Cook it your way.
@@ -308,7 +299,6 @@ export default function ImportPage() {
         </p>
       </div>
 
-      {/* Input card */}
       <div className="w-full max-w-lg bg-surface border border-border rounded-2xl p-6 shadow-sm">
         <label className="block text-xs font-semibold text-muted uppercase tracking-widest mb-3">
           Recipe URL
@@ -339,7 +329,6 @@ export default function ImportPage() {
           )}
         </button>
 
-        {/* Standard error (non-block) */}
         {error && (
           <div className="mt-4 flex items-start gap-2.5 text-sm text-highlight bg-highlight/10 border border-highlight/20 rounded-xl px-4 py-3">
             <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
@@ -348,7 +337,6 @@ export default function ImportPage() {
         )}
       </div>
 
-      {/* Hint + manual fallback */}
       <p className="mt-6 text-xs text-subtle text-center">
         Works best with sites that use structured recipe data (AllRecipes, Serious Eats, NYT Cooking, etc.)
       </p>

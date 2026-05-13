@@ -79,11 +79,11 @@ export default function Nav() {
     <header className="sticky top-0 z-40 bg-bg/80 backdrop-blur-md border-b border-border">
       <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-2">
+        <Link href="/" className="flex items-center gap-2 flex-shrink-0">
           <span className="w-7 h-7 rounded-lg bg-accent flex items-center justify-center flex-shrink-0">
             <ChefHat size={15} className="text-white" strokeWidth={2.5} />
           </span>
-          <div className="flex flex-col leading-tight">
+          <div className="flex-col leading-tight hidden sm:flex">
             <span className="font-display font-bold text-sm text-text tracking-tight">SavoryShelf</span>
             <span className="text-[10px] text-subtle">by Cocolito Collective</span>
           </div>
@@ -91,13 +91,12 @@ export default function Nav() {
 
         {/* Right side */}
         <div className="flex items-center gap-1">
-          <nav className="flex items-center gap-1">
+          <nav className="flex items-center gap-0.5">
             <Link href="/" className={linkCls('/')}>Import</Link>
 
             {/*
               router.refresh() busts the Next.js client-side router cache so the
-              My Recipes page always remounts and re-fetches the latest recipes,
-              instead of serving the stale cached version from a previous visit.
+              My Recipes page always remounts and re-fetches the latest recipes.
             */}
             <button
               onClick={() => { router.refresh(); router.push('/my-recipes') }}
@@ -105,6 +104,11 @@ export default function Nav() {
             >
               My Recipes
             </button>
+
+            {/* My Pantry — always visible so users can manage staples from anywhere */}
+            <Link href="/my-pantry" className={linkCls('/my-pantry')}>
+              <span className="hidden md:inline">My </span>Pantry
+            </Link>
           </nav>
           <div className="w-px h-5 bg-border mx-1" />
           <AuthSection />

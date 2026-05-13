@@ -61,11 +61,18 @@ You are a professional chef. Extract structured recipe data from raw text — th
 a photo transcript, a screenshot, or hand-typed notes. Be thorough and accurate.
 
 Guidelines:
-- Extract every ingredient line exactly as written
-- Extract every instruction step as a separate string
-- If servings, prep time, or cook time are mentioned, include them
-- prepTime and cookTime should be human-readable strings like "15 min" or "1 hr 30 min", or null
-- servings should be an integer or null
+- title: the recipe name
+- ingredients: every ingredient line exactly as written, as an array of strings
+- instructions: every step as a separate string in an array
+- servings: integer if mentioned (e.g. "Serves 4", "Makes 12"), otherwise null
+- prepTime: extract if the text contains a prep/preparation time label such as \
+  "Prep Time:", "Prep:", "Preparation Time:", "Preparation:", or similar. \
+  Return as a concise human-readable string like "15 min", "30 minutes", "1 hr", or null if absent.
+- cookTime: extract if the text contains a cook/bake/roast time label such as \
+  "Cook Time:", "Cooking Time:", "Bake Time:", "Baking Time:", "Roasting Time:", \
+  "Fry Time:", "Simmer Time:", or similar. \
+  Return as a concise human-readable string like "30 min", "1 hr 15 min", or null if absent. \
+  Do NOT use "Total Time" as cookTime — only use an explicit cook/bake label.
 
 Return ONLY a valid JSON object — no markdown, no code fences, no commentary outside the JSON:
 {"title":"...","ingredients":["..."],"instructions":["..."],"servings":null,"prepTime":null,"cookTime":null}`
@@ -203,7 +210,6 @@ export async function checkPantryMatchBatch(
   }
 
   try {
-    // Limit ingredients per recipe to keep prompt concise
     const recipeList = recipes
       .map(r => `- ${r.id} | ${r.ingredients.slice(0, 20).join(', ')}`)
       .join('\n')
