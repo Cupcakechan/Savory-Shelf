@@ -1,10 +1,11 @@
 'use server'
 
 import { Recipe } from './types'
+import { supabaseAdmin } from './supabase-admin'
 
-// ── Image → base64 ────────────────────────────────────────
+// ── Placeholder SVG ───────────────────────────────────────
+// Shown in-memory when image fetch/upload fails. Never stored in the DB.
 
-/** A warm-gray placeholder SVG (utensils) returned when image fetch fails */
 const PLACEHOLDER_IMAGE = (() => {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">
     <rect width="800" height="450" fill="#E8E5DF"/>
@@ -21,7 +22,18 @@ const PLACEHOLDER_IMAGE = (() => {
   return `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`
 })()
 
-async function fetchImageAsBase64(imageUrl: string, pageUrl: string): Promise<string> {
+// ── Image → Supabase Storage ──────────────────────────────
+
+/**
+ * Downloads an image from a URL and uploads it to the `recipe-images`
+ * Supabase Storage bucket. Returns the public URL on success, or
+ * undefined on failure (caller falls back to PLACEHOLDER_IMAGE).
+ */
+async function uploadImageToStorage(
+  imageUrl: string,
+  pageUrl: string,
+  recipeId: string,
+): Promise<string | undefined> {
   try {
     const resolved = imageUrl.startsWith('http')
       ? imageUrl
@@ -31,20 +43,84 @@ async function fetchImageAsBase64(imageUrl: string, pageUrl: string): Promise<st
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; RecipeBot/1.0)' },
       signal: AbortSignal.timeout(6_000),
     })
-    if (!res.ok) return PLACEHOLDER_IMAGE
+    if (!res.ok) return undefined
 
     const contentType = res.headers.get('content-type') ?? ''
-    if (!contentType.startsWith('image/')) return PLACEHOLDER_IMAGE
+    if (!contentType.startsWith('image/')) return undefined
 
     const size = parseInt(res.headers.get('content-length') ?? '0')
-    if (size > 600_000) return PLACEHOLDER_IMAGE
+    if (size > 600_000) return undefined
 
     const buf = await res.arrayBuffer()
-    if (buf.byteLength > 600_000) return PLACEHOLDER_IMAGE
+    if (buf.byteLength > 600_000) return undefined
 
-    return `data:${contentType.split(';')[0]};base64,${Buffer.from(buf).toString('base64')}`
+    const mimeType = contentType.split(';')[0]
+    const ext      = mimeType.split('/')[1] ?? 'jpg'
+    const fileName = `${recipeId}.${ext}`
+
+    const { error } = await supabaseAdmin.storage
+      .from('recipe-images')
+      .upload(fileName, buf, { contentType: mimeType, upsert: true })
+
+    if (error) return undefined
+
+    const { data } = supabaseAdmin.storage
+      .from('recipe-images')
+      .getPublicUrl(fileName)
+
+    return data.publicUrl
   } catch {
-    return PLACEHOLDER_IMAGE
+    return undefined
+  }
+}
+
+// ── Lazy migration: base64 → Storage ─────────────────────
+
+/**
+ * Called by RecipeView when an old recipe (image_base64 only) is opened.
+ * Uploads the stored base64 blob to Storage, writes image_url, clears
+ * image_base64 to free up DB space. Fire-and-forget safe.
+ */
+export async function migrateRecipeImage(
+  recipeId: string,
+): Promise<{ url?: string }> {
+  try {
+    const { data } = await supabaseAdmin
+      .from('recipes')
+      .select('image_base64')
+      .eq('id', recipeId)
+      .maybeSingle()
+
+    if (!data?.image_base64) return {}
+
+    const base64     = data.image_base64 as string
+    const contentType = base64.match(/^data:(image\/[^;]+);/)?.[1] ?? 'image/jpeg'
+    const raw        = base64.replace(/^data:image\/[^;]+;base64,/, '')
+    const buffer     = Buffer.from(raw, 'base64')
+    const ext        = contentType.split('/')[1] ?? 'jpg'
+    const fileName   = `${recipeId}.${ext}`
+
+    const { error } = await supabaseAdmin.storage
+      .from('recipe-images')
+      .upload(fileName, buffer, { contentType, upsert: true })
+
+    if (error) return {}
+
+    const { data: urlData } = supabaseAdmin.storage
+      .from('recipe-images')
+      .getPublicUrl(fileName)
+
+    const url = urlData.publicUrl
+
+    // Persist URL, clear the base64 blob
+    await supabaseAdmin
+      .from('recipes')
+      .update({ image_url: url, image_base64: null })
+      .eq('id', recipeId)
+
+    return { url }
+  } catch {
+    return {}
   }
 }
 
@@ -235,8 +311,6 @@ export async function importRecipe(
     })
 
     if (!res.ok) {
-      // Both 402 (Payment Required) and 403 (Forbidden) indicate the site
-      // blocks automated access — surface the manual paste option immediately.
       if (res.status === 402 || res.status === 403) {
         return {
           error: `This website blocks automatic import (HTTP ${res.status}). No worries — you can paste the recipe manually below.`,
@@ -245,12 +319,13 @@ export async function importRecipe(
       return { error: `The page returned an error (HTTP ${res.status}). Try another URL.` }
     }
 
-    const html = await res.text()
+    const html   = await res.text()
     const recipe = extractJsonLd(html) ?? extractHtmlFallback(html)
     recipe.sourceUrl = url
 
+    // Upload image to Supabase Storage; fall back to in-memory placeholder
     recipe.image = recipe.image
-      ? await fetchImageAsBase64(recipe.image, url)
+      ? (await uploadImageToStorage(recipe.image, url, recipe.id)) ?? PLACEHOLDER_IMAGE
       : PLACEHOLDER_IMAGE
 
     return { recipe }

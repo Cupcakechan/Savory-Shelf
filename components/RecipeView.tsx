@@ -13,6 +13,7 @@ import {
   translateRecipe, suggestSubstitutes,
   type TranslateResult, type SubstitutesResult,
 } from '@/lib/ai'
+import { migrateRecipeImage } from '@/lib/actions'
 import KitchenNotesModal from './KitchenNotesModal'
 import AuthModal from './AuthModal'
 
@@ -261,7 +262,6 @@ export default function RecipeView({
   const [substitutesResult, setSubstitutesResult] = useState<SubstitutesResult | null>(null)
   const [substitutesCopied, setSubstitutesCopied] = useState(false)
 
-  // ── Collections / Tags state ──────────────────────────
   const [tags, setTags]                 = useState<string[]>(initialRecipe.tags ?? [])
   const [userTags, setUserTags]         = useState<string[]>([])
   const [showTagInput, setShowTagInput] = useState(false)
@@ -274,19 +274,31 @@ export default function RecipeView({
 
   const isTranslated = recipe.title.includes('(translated)')
 
-  // ── Lazy image fetch ──────────────────────────────────
-  // The My Recipes list query omits image_base64 for performance.
-  // When a saved recipe is opened without an image, fetch it once here.
+  // ── Lazy image load + one-time migration ──────────────
+  // List query includes image_url (tiny string) but not image_base64 (large blob).
+  // New recipes:  image_url is set → recipe.image already populated, effect skips.
+  // Old recipes:  only image_base64 exists → fetch it, show immediately, then
+  //               migrate to Storage in the background so the next open is instant.
   useEffect(() => {
     if (recipe.image || !initialSaved || readOnly) return
+
     supabase
       .from('recipes')
-      .select('image_base64')
+      .select('image_url, image_base64')
       .eq('id', recipe.id)
       .maybeSingle()
-      .then(({ data }) => {
-        if (data?.image_base64) {
+      .then(async ({ data }) => {
+        if (!data) return
+
+        if (data.image_url) {
+          setRecipe(r => ({ ...r, image: data.image_url }))
+        } else if (data.image_base64) {
+          // Show base64 immediately so the user isn't waiting
           setRecipe(r => ({ ...r, image: data.image_base64 }))
+          // Migrate to Storage in the background; swap URL in when done
+          migrateRecipeImage(recipe.id).then(({ url }) => {
+            if (url) setRecipe(r => ({ ...r, image: url }))
+          })
         }
       })
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -478,7 +490,6 @@ export default function RecipeView({
           </div>
         )}
 
-        {/* Title + action buttons */}
         <div className="flex items-start justify-between gap-3 mb-5">
           <h1 className="font-display text-3xl md:text-4xl font-bold text-text leading-tight flex-1">{cleanTitle(recipe.title)}</h1>
           {!readOnly && (
@@ -500,7 +511,6 @@ export default function RecipeView({
           )}
         </div>
 
-        {/* Time / servings badges */}
         {(recipe.prepTime || recipe.cookTime || recipe.servings) && (
           <div className="flex flex-wrap gap-2 mb-6">
             {recipe.prepTime && <Chip icon={<Clock size={13} />} label={`Prep ${formatTime(recipe.prepTime)}`} />}
@@ -509,7 +519,6 @@ export default function RecipeView({
           </div>
         )}
 
-        {/* ── Collections / Tags ─────────────────────── */}
         {!readOnly && saved && (
           <div className="mb-8">
             <div className="flex items-center flex-wrap gap-2">
@@ -568,7 +577,6 @@ export default function RecipeView({
           </div>
         )}
 
-        {/* Servings control */}
         {recipe.servings && (
           <div className="bg-surface border border-border rounded-2xl overflow-hidden mb-4">
             <div className="flex items-stretch min-h-[6rem]">
@@ -591,7 +599,6 @@ export default function RecipeView({
           </div>
         )}
 
-        {/* AI buttons */}
         {!readOnly && (
           <div className="flex gap-3 mb-9">
             {!isTranslated && (
@@ -608,7 +615,6 @@ export default function RecipeView({
           </div>
         )}
 
-        {/* Ingredients */}
         <Section title="Ingredients">
           <ul className="space-y-1">
             {recipe.ingredients.map((ing, i) => (
@@ -624,7 +630,6 @@ export default function RecipeView({
           </ul>
         </Section>
 
-        {/* Instructions */}
         <Section title="Instructions">
           <ol className="space-y-5">
             {recipe.instructions.map((step, i) => (

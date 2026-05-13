@@ -20,7 +20,8 @@ export function fromDbRecipe(row: any): Recipe {
   return {
     id:           row.id,
     title:        row.title,
-    image:        row.image_base64  ?? undefined,
+    // Prefer the Storage URL (new); fall back to base64 (old) during migration
+    image:        row.image_url ?? row.image_base64 ?? undefined,
     prepTime:     row.prep_time     ?? undefined,
     cookTime:     row.cook_time     ?? undefined,
     servings:     row.servings      ?? undefined,
@@ -34,11 +35,14 @@ export function fromDbRecipe(row: any): Recipe {
 }
 
 export function toDbRecipe(recipe: Recipe, userId: string) {
+  // Only persist real Storage URLs — base64 placeholders are display-only in memory
+  const imageUrl = recipe.image?.startsWith('https://') ? recipe.image : null
+
   return {
     id:           recipe.id,
     user_id:      userId,
     title:        recipe.title,
-    image_base64: recipe.image        ?? null,
+    image_url:    imageUrl,
     prep_time:    recipe.prepTime     ?? null,
     cook_time:    recipe.cookTime     ?? null,
     servings:     recipe.servings     ?? null,
