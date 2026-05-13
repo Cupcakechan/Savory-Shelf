@@ -279,6 +279,7 @@ export default function RecipeView({
       setUser(session?.user ?? null)
     })
     return () => subscription.unsubscribe()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recipe.id, initialSaved, readOnly])
 
   const multiplier = servings / baseServings
@@ -327,15 +328,22 @@ export default function RecipeView({
 
   const applyTranslation = async () => {
     if (!translateResult) return
-    const newRecipe: Recipe = {
+    const translatedRecipe: Recipe = {
       ...recipe,
-      id: crypto.randomUUID(),
+      // Keep the same ID so the original row is replaced, not duplicated
       title: `${translateResult.title} (translated)`,
       ingredients: translateResult.ingredients,
       instructions: translateResult.instructions,
-      savedAt: undefined,
     }
-    if (user) await supabase.from('recipes').insert(toDbRecipe(newRecipe, user.id))
+    // Update local state immediately — subsequent actions (e.g. Suggest Substitutes)
+    // will now use the translated ingredients, not the original ones
+    setRecipe(translatedRecipe)
+    if (user) {
+      // upsert: updates the existing row if already saved, inserts if not —
+      // either way the original version is never left behind
+      await supabase.from('recipes').upsert(toDbRecipe(translatedRecipe, user.id))
+      setSaved(true)
+    }
     setTranslateApplied(true)
     setTimeout(() => { setTranslateApplied(false); setTranslateResult(null) }, 1800)
   }
