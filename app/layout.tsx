@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Lora, DM_Sans } from 'next/font/google'
+import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 import Nav from '@/components/Nav'
 
@@ -38,6 +39,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <footer className="border-t border-border py-5 text-center mt-8">
           <p className="text-xs text-subtle">SavoryShelf by Cocolito Collective</p>
         </footer>
+        <Analytics />
       </body>
     </html>
   )
