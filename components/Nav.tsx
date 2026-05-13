@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { ChefHat, Sun, Moon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
@@ -68,7 +68,9 @@ function AuthSection() {
 // ── Nav ───────────────────────────────────────────────────
 
 export default function Nav() {
-  const path = usePathname()
+  const path   = usePathname()
+  const router = useRouter()
+
   const linkCls = (href: string) =>
     `text-sm font-medium px-3 py-1.5 rounded-lg transition-colors ` +
     (path === href ? 'bg-surface text-text' : 'text-muted hover:text-text hover:bg-surface/60')
@@ -91,7 +93,18 @@ export default function Nav() {
         <div className="flex items-center gap-1">
           <nav className="flex items-center gap-1">
             <Link href="/" className={linkCls('/')}>Import</Link>
-            <Link href="/my-recipes" className={linkCls('/my-recipes')}>My Recipes</Link>
+
+            {/*
+              router.refresh() busts the Next.js client-side router cache so the
+              My Recipes page always remounts and re-fetches the latest recipes,
+              instead of serving the stale cached version from a previous visit.
+            */}
+            <button
+              onClick={() => { router.refresh(); router.push('/my-recipes') }}
+              className={linkCls('/my-recipes')}
+            >
+              My Recipes
+            </button>
           </nav>
           <div className="w-px h-5 bg-border mx-1" />
           <AuthSection />
