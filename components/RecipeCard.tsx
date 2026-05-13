@@ -1,4 +1,4 @@
-import { Clock, Trash2 } from 'lucide-react'
+import { Clock, Trash2, Leaf } from 'lucide-react'
 import { Recipe } from '@/lib/types'
 
 interface Props {
@@ -8,7 +8,7 @@ interface Props {
   pantryMatch?: boolean
 }
 
-/** Remove {tag} count pollution from titles (e.g. "{3 Ingredient} Cookies" → "Cookies") */
+/** Remove {tag} count pollution from titles */
 function cleanTitle(title: string): string {
   return title
     .replace(/^\{[^}]+\}\s*/g, '')
@@ -17,7 +17,6 @@ function cleanTitle(title: string): string {
     .trim()
 }
 
-/** "1 ingredient" / "12 ingredients" */
 function ingredientCount(recipe: Recipe): string {
   const n = recipe.ingredients?.length ?? 0
   if (n === 0) return ''
@@ -46,11 +45,12 @@ export default function RecipeCard({ recipe, onClick, onDelete, pantryMatch }: P
             <div className="w-full h-full flex items-center justify-center text-4xl select-none">🍽️</div>
           )}
 
-          {/* Pantry match badge */}
+          {/* Pantry Friendly badge */}
           {pantryMatch && (
             <div className="absolute bottom-2 left-2">
               <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-emerald-500 text-white rounded-full px-2 py-0.5 shadow-sm leading-snug">
-                🥬 Pantry Match
+                <Leaf size={9} strokeWidth={2.5} />
+                Pantry Friendly
               </span>
             </div>
           )}

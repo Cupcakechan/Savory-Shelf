@@ -4,15 +4,24 @@ import { generateText } from 'ai'
 import { createXai } from '@ai-sdk/xai'
 import type { Recipe } from './types'
 
-// ─────────────────────────────────────────────────────────────
-// Required environment variable: XAI_API_KEY
-//   • Local dev:  add  XAI_API_KEY=xai-...  to .env.local
-//   • Vercel:     Settings → Environment Variables → XAI_API_KEY
-//
-// Use XAI_API_KEY (NOT NEXT_PUBLIC_XAI_API_KEY).
-// This file runs server-side only — the key never reaches the browser.
-// Get your key at: https://console.x.ai
-// ─────────────────────────────────────────────────────────────
+// ── Model ─────────────────────────────────────────────────
+
+function getModel() {
+  if (!process.env.XAI_API_KEY) {
+    throw new Error('XAI_API_KEY is not set. Add it to your Vercel environment variables.')
+  }
+  const xai = createXai({ apiKey: process.env.XAI_API_KEY })
+  return xai('grok-3')
+}
+
+function parseJson<T>(raw: string): T {
+  const cleaned = raw
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/```\s*$/i, '')
+    .trim()
+  return JSON.parse(cleaned) as T
+}
 
 // ── System prompts ────────────────────────────────────────
 
@@ -47,24 +56,34 @@ Guidelines:
 Return ONLY a valid JSON object — no markdown, no code fences, no commentary outside the JSON:
 {"substitutes":[{"original":"ingredient name","substitutes":["swap 1 (note)","swap 2 (note)"]}],"note":"overall tip or empty string"}`
 
-// ── Helpers ───────────────────────────────────────────────
+const PARSE_RECIPE_SYSTEM = `\
+You are a professional chef. Extract structured recipe data from raw text — this may be a copied web page, \
+a photo transcript, a screenshot, or hand-typed notes. Be thorough and accurate.
 
-function getModel() {
-  if (!process.env.XAI_API_KEY) {
-    throw new Error('XAI_API_KEY is not set. Add it to your Vercel environment variables.')
-  }
-  const xai = createXai({ apiKey: process.env.XAI_API_KEY })
-  return xai('grok-3')
-}
+Guidelines:
+- Extract every ingredient line exactly as written
+- Extract every instruction step as a separate string
+- If servings, prep time, or cook time are mentioned, include them
+- prepTime and cookTime should be human-readable strings like "15 min" or "1 hr 30 min", or null
+- servings should be an integer or null
 
-function parseJson<T>(raw: string): T {
-  const cleaned = raw
-    .replace(/^```json\s*/i, '')
-    .replace(/^```\s*/i, '')
-    .replace(/```\s*$/i, '')
-    .trim()
-  return JSON.parse(cleaned) as T
-}
+Return ONLY a valid JSON object — no markdown, no code fences, no commentary outside the JSON:
+{"title":"...","ingredients":["..."],"instructions":["..."],"servings":null,"prepTime":null,"cookTime":null}`
+
+const PANTRY_MATCH_SYSTEM = `\
+You are a culinary expert. Given a list of pantry staple ingredients, determine which recipes can \
+mostly be made from those staples.
+
+Matching rules:
+- Be smart about synonyms and equivalents: "pasta" covers spaghetti/penne/fusilli/rigatoni; \
+"oil" covers olive oil/vegetable oil/canola oil; "sugar" covers white/brown/caster/icing sugar; \
+"flour" covers plain/all-purpose flour; "butter" covers unsalted/salted butter; etc.
+- Minor quantities of specialty herbs/spices that most people have (salt, pepper, garlic, onion) \
+should be counted as covered even if not explicitly in the pantry
+- A recipe is a pantry match (true) if ≥ 60% of its non-trivial ingredients are covered
+
+Return ONLY a valid JSON object mapping each recipe ID to a boolean — no markdown, no code fences:
+{"recipeId1": true, "recipeId2": false}`
 
 // ── Exported types ────────────────────────────────────────
 
@@ -82,6 +101,15 @@ export interface SubstituteItem {
 export interface SubstitutesResult {
   substitutes: SubstituteItem[]
   note?: string
+}
+
+export interface ParsedRecipeResult {
+  title: string
+  ingredients: string[]
+  instructions: string[]
+  servings?: number | null
+  prepTime?: string | null
+  cookTime?: string | null
 }
 
 // ── Server Actions ────────────────────────────────────────
@@ -108,8 +136,7 @@ export async function translateRecipe(
     const msg = err instanceof Error ? err.message : String(err)
     if (msg.includes('XAI_API_KEY')) return { error: msg }
     return {
-      error:
-        'Translation failed — please check your XAI_API_KEY in Vercel settings or try again later.',
+      error: 'Translation failed — please check your XAI_API_KEY in Vercel settings or try again later.',
     }
   }
 }
@@ -135,8 +162,67 @@ export async function suggestSubstitutes(
     const msg = err instanceof Error ? err.message : String(err)
     if (msg.includes('XAI_API_KEY')) return { error: msg }
     return {
-      error:
-        'Could not generate substitutes — please check your XAI_API_KEY in Vercel settings or try again later.',
+      error: 'Could not generate substitutes — please check your XAI_API_KEY in Vercel settings or try again later.',
     }
+  }
+}
+
+/** Extract structured recipe fields from raw pasted text using Grok. */
+export async function parseRecipeText(
+  text: string,
+): Promise<{ result?: ParsedRecipeResult; error?: string }> {
+  try {
+    const { text: raw } = await generateText({
+      model: getModel(),
+      system: PARSE_RECIPE_SYSTEM,
+      prompt: `Extract the recipe from this text:\n\n${text.slice(0, 8000)}`,
+    })
+
+    return { result: parseJson<ParsedRecipeResult>(raw) }
+  } catch (err) {
+    console.error('[parseRecipeText] error:', err)
+    const msg = err instanceof Error ? err.message : String(err)
+    if (msg.includes('XAI_API_KEY')) return { error: msg }
+    return {
+      error: 'Could not parse the recipe — please fill in the fields manually.',
+    }
+  }
+}
+
+/**
+ * Batch-check which recipes are "pantry friendly" given a list of staple ingredients.
+ * Uses Grok for synonym-aware matching (pasta ↔ spaghetti, oil ↔ olive oil, etc.)
+ * Returns a map of { recipeId: boolean }.
+ */
+export async function checkPantryMatchBatch(
+  recipes: Array<{ id: string; ingredients: string[] }>,
+  pantry: string[],
+): Promise<{ result?: Record<string, boolean>; error?: string }> {
+  if (recipes.length === 0 || pantry.length === 0) {
+    return { result: Object.fromEntries(recipes.map(r => [r.id, false])) }
+  }
+
+  try {
+    // Limit ingredients per recipe to keep prompt concise
+    const recipeList = recipes
+      .map(r => `- ${r.id} | ${r.ingredients.slice(0, 20).join(', ')}`)
+      .join('\n')
+
+    const prompt =
+      `Pantry staples: ${pantry.join(', ')}\n\n` +
+      `Recipes (format: "- id | ingredients"):\n${recipeList}`
+
+    const { text } = await generateText({
+      model: getModel(),
+      system: PANTRY_MATCH_SYSTEM,
+      prompt,
+    })
+
+    return { result: parseJson<Record<string, boolean>>(text) }
+  } catch (err) {
+    console.error('[checkPantryMatchBatch] error:', err)
+    const msg = err instanceof Error ? err.message : String(err)
+    if (msg.includes('XAI_API_KEY')) return { error: msg }
+    return { error: 'Pantry check failed — please try again later.' }
   }
 }

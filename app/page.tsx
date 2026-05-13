@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Link2, Loader2, AlertCircle, ClipboardPaste, ChevronLeft } from 'lucide-react'
+import { Link2, Loader2, AlertCircle, ClipboardPaste, ChevronLeft, Sparkles } from 'lucide-react'
 import { importRecipe } from '@/lib/actions'
+import { parseRecipeText } from '@/lib/ai'
 import { Recipe } from '@/lib/types'
 import RecipeView from '@/components/RecipeView'
 
@@ -17,37 +18,68 @@ const EXAMPLE_URLS = [
 interface ManualFormProps {
   onRecipe: (r: Recipe) => void
   onCancel: () => void
+  blockError?: string   // pre-populated context message when triggered by a block error
 }
 
-function ManualPasteForm({ onRecipe, onCancel }: ManualFormProps) {
-  const [title, setTitle]               = useState('')
-  const [ingredientsText, setIngredients] = useState('')
+function ManualPasteForm({ onRecipe, onCancel, blockError }: ManualFormProps) {
+  // Raw text for Grok parsing
+  const [rawText, setRawText]   = useState('')
+  const [parsing, setParsing]   = useState(false)
+  const [parseMsg, setParseMsg] = useState('')
+  const [parsed, setParsed]     = useState(false)   // whether fields are populated
+
+  // Editable recipe fields
+  const [title, setTitle]                   = useState('')
+  const [ingredientsText, setIngredients]   = useState('')
   const [instructionsText, setInstructions] = useState('')
-  const [servings, setServings]         = useState('')
-  const [prepTime, setPrepTime]         = useState('')
-  const [cookTime, setCookTime]         = useState('')
-  const [formError, setFormError]       = useState('')
+  const [servings, setServings]             = useState('')
+  const [prepTime, setPrepTime]             = useState('')
+  const [cookTime, setCookTime]             = useState('')
+  const [formError, setFormError]           = useState('')
+
+  const handleParse = async () => {
+    if (!rawText.trim()) return
+    setParsing(true)
+    setParseMsg('')
+    setFormError('')
+
+    const { result, error } = await parseRecipeText(rawText)
+    setParsing(false)
+
+    if (error || !result) {
+      setParseMsg(error ?? 'Could not parse — fill in the fields below manually.')
+      setParsed(true)
+      return
+    }
+
+    setTitle(result.title ?? '')
+    setIngredients((result.ingredients ?? []).join('\n'))
+    setInstructions((result.instructions ?? []).join('\n'))
+    setServings(result.servings ? String(result.servings) : '')
+    setPrepTime(result.prepTime ?? '')
+    setCookTime(result.cookTime ?? '')
+    setParsed(true)
+    setParseMsg('')
+  }
 
   const handleSubmit = () => {
-    const trimmedTitle = title.trim()
-    const ingredients  = ingredientsText.split('\n').map(s => s.trim()).filter(Boolean)
+    const trimmedTitle  = title.trim()
+    const ingredients   = ingredientsText.split('\n').map(s => s.trim()).filter(Boolean)
+    const instructions  = instructionsText.split('\n').map(s => s.trim()).filter(Boolean)
+    const parsedServings = servings.trim() ? parseInt(servings.trim()) : undefined
 
     if (!trimmedTitle)       { setFormError('Please enter a recipe title.'); return }
     if (!ingredients.length) { setFormError('Please add at least one ingredient.'); return }
 
-    const instructions = instructionsText.split('\n').map(s => s.trim()).filter(Boolean)
-    const parsedServings = servings.trim() ? parseInt(servings.trim()) : undefined
-
     const recipe: Recipe = {
-      id:           crypto.randomUUID(),
-      title:        trimmedTitle,
+      id:          crypto.randomUUID(),
+      title:       trimmedTitle,
       ingredients,
       instructions,
-      servings:     !isNaN(parsedServings ?? NaN) ? parsedServings : undefined,
-      prepTime:     prepTime.trim()  || undefined,
-      cookTime:     cookTime.trim()  || undefined,
+      servings:    !isNaN(parsedServings ?? NaN) ? parsedServings : undefined,
+      prepTime:    prepTime.trim()  || undefined,
+      cookTime:    cookTime.trim()  || undefined,
     }
-
     onRecipe(recipe)
   }
 
@@ -68,96 +100,131 @@ function ManualPasteForm({ onRecipe, onCancel }: ManualFormProps) {
       <div className="bg-surface border border-border rounded-2xl p-6 shadow-sm space-y-5">
         <div>
           <h2 className="font-display text-xl font-bold text-text mb-1">Paste Recipe Manually</h2>
-          <p className="text-sm text-muted">Fill in what you have — only title and ingredients are required.</p>
+          <p className="text-sm text-muted leading-relaxed">
+            Paste the full recipe text and let Grok structure it, or fill in the fields yourself.
+          </p>
         </div>
 
-        {/* Title */}
-        <div>
-          <label className={labelCls}>Recipe Title *</label>
-          <input
-            type="text"
-            value={title}
-            onChange={e => setTitle(e.target.value)}
-            placeholder="e.g. Grandma's Chicken Soup"
-            className={fieldCls}
-            autoFocus
-          />
-        </div>
-
-        {/* Ingredients */}
-        <div>
-          <label className={labelCls}>Ingredients * <span className="normal-case font-normal text-subtle">(one per line)</span></label>
-          <textarea
-            value={ingredientsText}
-            onChange={e => setIngredients(e.target.value)}
-            placeholder={"2 cups flour\n1 tsp salt\n3 eggs"}
-            rows={6}
-            className={`${fieldCls} resize-none leading-relaxed`}
-          />
-        </div>
-
-        {/* Instructions */}
-        <div>
-          <label className={labelCls}>Instructions <span className="normal-case font-normal text-subtle">(one step per line, optional)</span></label>
-          <textarea
-            value={instructionsText}
-            onChange={e => setInstructions(e.target.value)}
-            placeholder={"Mix dry ingredients.\nAdd eggs and stir until combined.\nBake at 180°C for 30 min."}
-            rows={5}
-            className={`${fieldCls} resize-none leading-relaxed`}
-          />
-        </div>
-
-        {/* Servings / Prep / Cook — compact row */}
-        <div className="grid grid-cols-3 gap-3">
-          <div>
-            <label className={labelCls}>Servings</label>
-            <input
-              type="number"
-              min={1}
-              value={servings}
-              onChange={e => setServings(e.target.value)}
-              placeholder="4"
-              className={fieldCls}
-            />
-          </div>
-          <div>
-            <label className={labelCls}>Prep Time</label>
-            <input
-              type="text"
-              value={prepTime}
-              onChange={e => setPrepTime(e.target.value)}
-              placeholder="15 min"
-              className={fieldCls}
-            />
-          </div>
-          <div>
-            <label className={labelCls}>Cook Time</label>
-            <input
-              type="text"
-              value={cookTime}
-              onChange={e => setCookTime(e.target.value)}
-              placeholder="1 hr"
-              className={fieldCls}
-            />
-          </div>
-        </div>
-
-        {/* Form error */}
-        {formError && (
-          <div className="flex items-center gap-2 text-sm text-highlight bg-highlight/10 border border-highlight/20 rounded-xl px-4 py-3">
-            <AlertCircle size={15} className="flex-shrink-0" />
-            {formError}
+        {/* Block-error context banner */}
+        {blockError && (
+          <div className="flex items-start gap-2.5 bg-bg border border-border rounded-xl px-4 py-3">
+            <AlertCircle size={15} className="text-muted flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-muted leading-relaxed">{blockError}</p>
           </div>
         )}
 
+        {/* ── Step 1: Raw paste + Grok ── */}
+        <div>
+          <label className={labelCls}>
+            Full recipe text
+            <span className="normal-case font-normal text-subtle ml-1">(paste anything — Grok will figure it out)</span>
+          </label>
+          <textarea
+            value={rawText}
+            onChange={e => setRawText(e.target.value)}
+            placeholder={"Paste the recipe here — a full web page copy, a photo transcript, or just your own notes. Grok will extract the title, ingredients, and steps."}
+            rows={7}
+            className={`${fieldCls} resize-none leading-relaxed`}
+            autoFocus={!blockError}
+          />
+        </div>
+
         <button
-          onClick={handleSubmit}
-          className="w-full flex items-center justify-center gap-2 bg-accent hover:bg-accent/90 text-white font-semibold text-sm rounded-xl py-3.5 transition-all active:scale-[.98]"
+          onClick={handleParse}
+          disabled={!rawText.trim() || parsing}
+          className="w-full flex items-center justify-center gap-2 bg-accent hover:bg-accent/90 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-sm rounded-xl py-3.5 transition-all active:scale-[.98]"
         >
-          <ClipboardPaste size={16} />
-          Preview Recipe
+          {parsing ? (
+            <><Loader2 size={15} className="animate-spin" />Parsing with Grok…</>
+          ) : (
+            <><Sparkles size={15} />Parse with Grok</>
+          )}
         </button>
+
+        {parseMsg && (
+          <p className="text-xs text-muted leading-relaxed">{parseMsg}</p>
+        )}
+
+        {/* ── Step 2: Editable fields (always visible, auto-filled after parse) ── */}
+        <div className="border-t border-border pt-5 space-y-4">
+          <p className="text-xs text-muted -mt-1">
+            {parsed ? 'Review and edit the parsed recipe below.' : 'Or fill in the fields manually.'}
+          </p>
+
+          {/* Title */}
+          <div>
+            <label className={labelCls}>Recipe Title *</label>
+            <input
+              type="text"
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              placeholder="e.g. Grandma's Chicken Soup"
+              className={fieldCls}
+            />
+          </div>
+
+          {/* Ingredients */}
+          <div>
+            <label className={labelCls}>
+              Ingredients *
+              <span className="normal-case font-normal text-subtle ml-1">(one per line)</span>
+            </label>
+            <textarea
+              value={ingredientsText}
+              onChange={e => setIngredients(e.target.value)}
+              placeholder={"2 cups flour\n1 tsp salt\n3 eggs"}
+              rows={6}
+              className={`${fieldCls} resize-none leading-relaxed`}
+            />
+          </div>
+
+          {/* Instructions */}
+          <div>
+            <label className={labelCls}>
+              Instructions
+              <span className="normal-case font-normal text-subtle ml-1">(one step per line, optional)</span>
+            </label>
+            <textarea
+              value={instructionsText}
+              onChange={e => setInstructions(e.target.value)}
+              placeholder={"Mix dry ingredients.\nAdd eggs and stir until combined.\nBake at 180°C for 30 min."}
+              rows={5}
+              className={`${fieldCls} resize-none leading-relaxed`}
+            />
+          </div>
+
+          {/* Servings / Prep / Cook */}
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className={labelCls}>Servings</label>
+              <input type="number" min={1} value={servings} onChange={e => setServings(e.target.value)} placeholder="4" className={fieldCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Prep Time</label>
+              <input type="text" value={prepTime} onChange={e => setPrepTime(e.target.value)} placeholder="15 min" className={fieldCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Cook Time</label>
+              <input type="text" value={cookTime} onChange={e => setCookTime(e.target.value)} placeholder="1 hr" className={fieldCls} />
+            </div>
+          </div>
+
+          {/* Form error */}
+          {formError && (
+            <div className="flex items-center gap-2 text-sm text-highlight bg-highlight/10 border border-highlight/20 rounded-xl px-4 py-3">
+              <AlertCircle size={15} className="flex-shrink-0" />
+              {formError}
+            </div>
+          )}
+
+          <button
+            onClick={handleSubmit}
+            className="w-full flex items-center justify-center gap-2 bg-accent hover:bg-accent/90 text-white font-semibold text-sm rounded-xl py-3.5 transition-all active:scale-[.98]"
+          >
+            <ClipboardPaste size={16} />
+            Preview Recipe
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -166,11 +233,12 @@ function ManualPasteForm({ onRecipe, onCancel }: ManualFormProps) {
 // ── Import page ───────────────────────────────────────────
 
 export default function ImportPage() {
-  const [url, setUrl]           = useState('')
-  const [recipe, setRecipe]     = useState<Recipe | null>(null)
-  const [error, setError]       = useState('')
-  const [showManual, setShowManual] = useState(false)
-  const [isPending, startTransition] = useTransition()
+  const [url, setUrl]                     = useState('')
+  const [recipe, setRecipe]               = useState<Recipe | null>(null)
+  const [error, setError]                 = useState('')
+  const [showManual, setShowManual]       = useState(false)
+  const [blockError, setBlockError]       = useState('')
+  const [isPending, startTransition]      = useTransition()
 
   const handleImport = () => {
     if (!url.trim()) return
@@ -178,7 +246,17 @@ export default function ImportPage() {
     startTransition(async () => {
       const result = await importRecipe(url.trim())
       if (result.error) {
-        setError(result.error)
+        const isBlock =
+          result.error.toLowerCase().includes('blocks automatic import') ||
+          result.error.toLowerCase().includes('prevents automatic import')
+
+        if (isBlock) {
+          // Auto-navigate to paste form with context
+          setBlockError(result.error)
+          setShowManual(true)
+        } else {
+          setError(result.error)
+        }
       } else if (result.recipe) {
         setRecipe(result.recipe)
       }
@@ -189,10 +267,6 @@ export default function ImportPage() {
     if (e.key === 'Enter') handleImport()
   }
 
-  // Detect scraping-block errors specifically
-  const isBlockError = error.toLowerCase().includes('blocks automatic import') ||
-                       error.toLowerCase().includes('prevents automatic import')
-
   // ── Recipe view (post-import or manual entry) ──────────
   if (recipe) {
     return (
@@ -202,6 +276,7 @@ export default function ImportPage() {
           setRecipe(null)
           setUrl('')
           setShowManual(false)
+          setBlockError('')
         }}
       />
     )
@@ -213,7 +288,8 @@ export default function ImportPage() {
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-3.5rem)] pb-12">
         <ManualPasteForm
           onRecipe={setRecipe}
-          onCancel={() => setShowManual(false)}
+          onCancel={() => { setShowManual(false); setBlockError('') }}
+          blockError={blockError || undefined}
         />
       </div>
     )
@@ -257,45 +333,22 @@ export default function ImportPage() {
           className="w-full flex items-center justify-center gap-2.5 bg-accent hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold text-sm rounded-xl py-3.5 transition-all active:scale-[.98]"
         >
           {isPending ? (
-            <>
-              <Loader2 size={16} className="animate-spin" />
-              Importing recipe…
-            </>
+            <><Loader2 size={16} className="animate-spin" />Importing recipe…</>
           ) : (
             'Import Recipe'
           )}
         </button>
 
-        {/* ── Error state ───────────────────────────────── */}
+        {/* Standard error (non-block) */}
         {error && (
-          <div className="mt-4 space-y-3">
-            {isBlockError ? (
-              /* Friendly block-error with manual fallback */
-              <div className="bg-surface border border-border rounded-xl p-4 text-center">
-                <p className="text-sm font-medium text-text mb-1">This site prevents automatic import</p>
-                <p className="text-xs text-muted mb-4 leading-relaxed">
-                  No worries — you can paste the recipe below and it'll work just like an import.
-                </p>
-                <button
-                  onClick={() => { setError(''); setShowManual(true) }}
-                  className="inline-flex items-center gap-2 bg-accent hover:bg-accent/90 text-white text-sm font-semibold rounded-xl px-5 py-2.5 transition-all active:scale-[.98]"
-                >
-                  <ClipboardPaste size={15} />
-                  Paste Recipe Manually
-                </button>
-              </div>
-            ) : (
-              /* Standard error */
-              <div className="flex items-start gap-2.5 text-sm text-highlight bg-highlight/10 border border-highlight/20 rounded-xl px-4 py-3">
-                <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
-                <span>{error}</span>
-              </div>
-            )}
+          <div className="mt-4 flex items-start gap-2.5 text-sm text-highlight bg-highlight/10 border border-highlight/20 rounded-xl px-4 py-3">
+            <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
+            <span>{error}</span>
           </div>
         )}
       </div>
 
-      {/* Hint + always-available manual option */}
+      {/* Hint + manual fallback */}
       <p className="mt-6 text-xs text-subtle text-center">
         Works best with sites that use structured recipe data (AllRecipes, Serious Eats, NYT Cooking, etc.)
       </p>

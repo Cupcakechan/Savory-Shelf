@@ -320,20 +320,37 @@ export default function RecipeView({
     setChecked(prev => { const next = new Set(prev); next.has(i) ? next.delete(i) : next.add(i); return next })
 
   const toggleSave = async () => {
-    if (!user) { setShowAuth(true); return }
+    // Refresh session if local state is stale — prevents false sign-in prompts
+    // when the user navigates quickly before the initial getSession() resolves.
+    let currentUser = user
+    if (!currentUser) {
+      const { data: { session } } = await supabase.auth.getSession()
+      currentUser = session?.user ?? null
+      if (currentUser) setUser(currentUser)
+    }
+    if (!currentUser) { setShowAuth(true); return }
+
     if (saved) {
       await supabase.from('recipes').delete().eq('id', recipe.id)
       setSaved(false)
     } else {
-      await supabase.from('recipes').insert(toDbRecipe(recipe, user.id))
+      await supabase.from('recipes').insert(toDbRecipe(recipe, currentUser.id))
       setSaved(true)
     }
   }
 
   const handleShare = async () => {
-    if (!user) { setShowAuth(true); return }
+    // Same session-refresh guard as toggleSave
+    let currentUser = user
+    if (!currentUser) {
+      const { data: { session } } = await supabase.auth.getSession()
+      currentUser = session?.user ?? null
+      if (currentUser) setUser(currentUser)
+    }
+    if (!currentUser) { setShowAuth(true); return }
+
     if (!saved) {
-      await supabase.from('recipes').insert({ ...toDbRecipe(recipe, user.id), is_public: true })
+      await supabase.from('recipes').insert({ ...toDbRecipe(recipe, currentUser.id), is_public: true })
       setSaved(true)
     } else {
       await supabase.from('recipes').update({ is_public: true }).eq('id', recipe.id)

@@ -6,22 +6,19 @@ import Link from 'next/link'
 import type { User } from '@supabase/supabase-js'
 import { Recipe } from '@/lib/types'
 import { supabase, fromDbRecipe } from '@/lib/supabase'
+import { checkPantryMatchBatch } from '@/lib/ai'
 import RecipeCard from '@/components/RecipeCard'
 import RecipeView from '@/components/RecipeView'
 import AuthModal from '@/components/AuthModal'
 
-// ── Pantry helpers ────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────
+
+interface PantryCache {
+  pantryHash: string
+  results: Record<string, boolean>
+}
 
 const MAX_PANTRY = 10
-
-/** True when ≥ 50 % of a recipe's ingredients are covered by pantry staples */
-function isPantryMatch(recipe: Recipe, pantry: string[]): boolean {
-  if (pantry.length === 0 || recipe.ingredients.length === 0) return false
-  const covered = recipe.ingredients.filter(ing =>
-    pantry.some(staple => ing.toLowerCase().includes(staple.toLowerCase())),
-  )
-  return covered.length / recipe.ingredients.length >= 0.5
-}
 
 // ── Pantry Modal ──────────────────────────────────────────
 
@@ -56,8 +53,6 @@ function PantryModal({
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-bg border border-border rounded-2xl p-6 w-full max-w-sm shadow-2xl">
-
-        {/* Header */}
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-2">
             <span className="text-xl select-none">🥬</span>
@@ -71,7 +66,7 @@ function PantryModal({
           </button>
         </div>
         <p className="text-xs text-muted mb-5 leading-relaxed">
-          Staples you always have on hand. Recipes covering most of these will get a match badge.
+          Staples you always have on hand. Grok checks recipes against these for Pantry Friendly badges.
         </p>
 
         {/* Chips */}
@@ -105,22 +100,20 @@ function PantryModal({
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') add() }}
-              placeholder="e.g. olive oil, butter, eggs…"
+              placeholder="e.g. olive oil, butter…"
               className="flex-1 bg-surface border border-border rounded-xl px-3.5 py-2.5 text-sm text-text placeholder:text-subtle outline-none focus:border-accent/50 transition-colors"
               autoFocus
             />
             <button
               onClick={add}
               disabled={!input.trim() || busy}
-              className="flex-shrink-0 bg-accent hover:bg-accent/90 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl px-4 py-2.5 transition-all active:scale-[.97]"
+              className="flex-shrink-0 bg-accent hover:bg-accent/90 disabled:opacity-40 text-white text-sm font-semibold rounded-xl px-4 py-2.5 transition-all active:scale-[.97]"
             >
               Add
             </button>
           </div>
         ) : (
-          <p className="text-xs text-muted text-center mb-4">
-            Maximum {MAX_PANTRY} staples reached.
-          </p>
+          <p className="text-xs text-muted text-center mb-4">Maximum {MAX_PANTRY} staples reached.</p>
         )}
 
         {/* Clear all */}
@@ -132,6 +125,17 @@ function PantryModal({
             Clear all staples
           </button>
         )}
+
+        {/* Link to full pantry page */}
+        <div className="border-t border-border mt-3 pt-3 text-center">
+          <Link
+            href="/my-pantry"
+            onClick={onClose}
+            className="text-xs text-accent hover:underline transition-colors"
+          >
+            Manage full pantry →
+          </Link>
+        </div>
       </div>
     </div>
   )
@@ -164,15 +168,17 @@ function RecipeGridSkeleton() {
 // ── Page ──────────────────────────────────────────────────
 
 export default function MyRecipesPage() {
-  const [recipes, setRecipes]       = useState<Recipe[]>([])
-  const [user, setUser]             = useState<User | null>(null)
-  const [selected, setSelected]     = useState<Recipe | null>(null)
-  const [showAuth, setShowAuth]     = useState(false)
-  const [loading, setLoading]       = useState(true)
-  const [activeTag, setActiveTag]   = useState<string>('all')
-  const [search, setSearch]         = useState('')
-  const [pantry, setPantry]         = useState<string[]>([])
-  const [showPantry, setShowPantry] = useState(false)
+  const [recipes, setRecipes]             = useState<Recipe[]>([])
+  const [user, setUser]                   = useState<User | null>(null)
+  const [selected, setSelected]           = useState<Recipe | null>(null)
+  const [showAuth, setShowAuth]           = useState(false)
+  const [loading, setLoading]             = useState(true)
+  const [activeTag, setActiveTag]         = useState<string>('all')
+  const [search, setSearch]               = useState('')
+  const [pantry, setPantry]               = useState<string[]>([])
+  const [pantryCache, setPantryCache]     = useState<PantryCache | null>(null)
+  const [pantryMatches, setPantryMatches] = useState<Record<string, boolean>>({})
+  const [showPantry, setShowPantry]       = useState(false)
 
   // ── Data loaders ────────────────────────────────────────
 
@@ -184,22 +190,86 @@ export default function MyRecipesPage() {
     if (data) setRecipes(data.map(fromDbRecipe))
   }
 
-  const loadPantry = async (userId: string) => {
+  const loadPantry = async (userId: string): Promise<{ staples: string[]; cache: PantryCache | null }> => {
     const { data } = await supabase
       .from('pantry')
-      .select('staples')
+      .select('staples, match_cache')
       .eq('user_id', userId)
       .maybeSingle()
-    setPantry(data?.staples ?? [])
+    const staples = data?.staples ?? []
+    // match_cache is {} by default (empty object) — treat that as null
+    const rawCache = data?.match_cache
+    const cache: PantryCache | null =
+      rawCache && typeof rawCache === 'object' && 'pantryHash' in rawCache
+        ? (rawCache as PantryCache)
+        : null
+    setPantry(staples)
+    setPantryCache(cache)
+    return { staples, cache }
   }
 
-  /** Upsert the whole staples array — one row per user */
   const savePantry = async (staples: string[]) => {
     if (!user) return
     setPantry(staples)
-    await supabase
-      .from('pantry')
-      .upsert({ user_id: user.id, staples })
+    // Invalidate match cache so Grok re-runs with new staples
+    setPantryCache(null)
+    setPantryMatches({})
+    await supabase.from('pantry').upsert({ user_id: user.id, staples, match_cache: {} })
+  }
+
+  // ── Grok pantry match (with Supabase cache) ─────────────
+
+  const runPantryCheck = async (
+    recipeList: Recipe[],
+    staples: string[],
+    userId: string,
+    cache: PantryCache | null,
+  ) => {
+    if (staples.length === 0 || recipeList.length === 0) {
+      setPantryMatches({})
+      return
+    }
+
+    const hash = [...staples].sort().join('|')
+
+    // Cache hit: pantry unchanged and all recipes are covered
+    if (cache?.pantryHash === hash) {
+      const uncached = recipeList.filter(r => !(r.id in cache.results))
+      if (uncached.length === 0) {
+        setPantryMatches(cache.results)
+        return
+      }
+      // Use cached results immediately, then check only uncached recipes
+      setPantryMatches(cache.results)
+      const { result } = await checkPantryMatchBatch(
+        uncached.map(r => ({ id: r.id, ingredients: r.ingredients })),
+        staples,
+      )
+      if (result) {
+        const merged = { ...cache.results, ...result }
+        setPantryMatches(merged)
+        // Fire-and-forget cache update
+        supabase.from('pantry')
+          .update({ match_cache: { pantryHash: hash, results: merged } })
+          .eq('user_id', userId)
+      }
+      return
+    }
+
+    // Cache miss or stale — run full batch check
+    const { result } = await checkPantryMatchBatch(
+      recipeList.map(r => ({ id: r.id, ingredients: r.ingredients })),
+      staples,
+    )
+    if (result) {
+      setPantryMatches(result)
+      const newCache: PantryCache = { pantryHash: hash, results: result }
+      setPantryCache(newCache)
+      // Fire-and-forget cache write
+      supabase.from('pantry')
+        .update({ match_cache: newCache })
+        .eq('user_id', userId)
+    }
   }
 
   // ── Mount ───────────────────────────────────────────────
@@ -207,9 +277,22 @@ export default function MyRecipesPage() {
   useEffect(() => {
     loadRecipes().finally(() => setLoading(false))
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setUser(session?.user ?? null)
-      if (session?.user) loadPantry(session.user.id)
+      if (session?.user) {
+        const { staples, cache } = await loadPantry(session.user.id)
+        // Pantry check runs in the background once recipes are also loaded
+        if (staples.length > 0) {
+          const { data } = await supabase
+            .from('recipes')
+            .select('*')
+            .order('created_at', { ascending: false })
+          if (data) {
+            const loaded = data.map(fromDbRecipe)
+            runPantryCheck(loaded, staples, session.user.id, cache)
+          }
+        }
+      }
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_, session) => {
@@ -221,6 +304,7 @@ export default function MyRecipesPage() {
         setUser(null)
         setRecipes([])
         setPantry([])
+        setPantryMatches({})
       }
       setLoading(false)
     })
@@ -228,6 +312,14 @@ export default function MyRecipesPage() {
     return () => subscription.unsubscribe()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Re-run pantry check whenever pantry changes (after modal edits)
+  const pantryFingerprint = useMemo(() => [...pantry].sort().join('|'), [pantry])
+  useEffect(() => {
+    if (!user || pantry.length === 0 || recipes.length === 0) return
+    runPantryCheck(recipes, pantry, user.id, pantryCache)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, pantryFingerprint, recipes.length])
 
   // ── Derived state ────────────────────────────────────────
 
@@ -248,10 +340,7 @@ export default function MyRecipesPage() {
   )
 
   const displayedRecipes = useMemo(() => {
-    const terms = search
-      .split(/[\s,]+/)
-      .map(t => t.trim().toLowerCase())
-      .filter(Boolean)
+    const terms = search.split(/[\s,]+/).map(t => t.trim().toLowerCase()).filter(Boolean)
     if (terms.length === 0) return tagFilteredRecipes
     return tagFilteredRecipes.filter(r => {
       const haystack = [r.title, ...r.ingredients].join(' ').toLowerCase()
@@ -332,7 +421,6 @@ export default function MyRecipesPage() {
 
       {/* ── Search + Pantry button ────────────────────────── */}
       <div className="flex gap-2 mb-5">
-        {/* Search input */}
         <div className="flex-1 flex items-center gap-2.5 bg-surface border border-border rounded-xl px-3.5 py-3 focus-within:border-accent/50 transition-colors">
           <Search size={15} className="text-muted flex-shrink-0" />
           <input
@@ -353,7 +441,7 @@ export default function MyRecipesPage() {
           )}
         </div>
 
-        {/* Pantry button */}
+        {/* Pantry button — opens quick-edit modal */}
         <button
           onClick={() => setShowPantry(true)}
           title="My Pantry"
@@ -434,7 +522,7 @@ export default function MyRecipesPage() {
               recipe={r}
               onClick={() => setSelected(r)}
               onDelete={handleDelete}
-              pantryMatch={isPantryMatch(r, pantry)}
+              pantryMatch={pantryMatches[r.id] ?? false}
             />
           ))}
         </div>

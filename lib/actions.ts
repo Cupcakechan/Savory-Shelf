@@ -36,7 +36,6 @@ async function fetchImageAsBase64(imageUrl: string, pageUrl: string): Promise<st
     const contentType = res.headers.get('content-type') ?? ''
     if (!contentType.startsWith('image/')) return PLACEHOLDER_IMAGE
 
-    // Skip images > 600 KB to stay within localStorage limits
     const size = parseInt(res.headers.get('content-length') ?? '0')
     if (size > 600_000) return PLACEHOLDER_IMAGE
 
@@ -51,7 +50,6 @@ async function fetchImageAsBase64(imageUrl: string, pageUrl: string): Promise<st
 
 // ── Helpers ────────────────────────────────────────────────
 
-/** Convert ISO-8601 duration (PT1H30M, P0DT1H30M, etc.) → "1 hr 30 min" */
 function parseDuration(d: string): string {
   if (!d) return ''
   const m = d.match(/P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?)?/)
@@ -64,18 +62,16 @@ function parseDuration(d: string): string {
   return d
 }
 
-/** Strip count prefixes/suffixes like "{3 Ingredient}" from recipe titles */
 function cleanRecipeTitle(raw: string): string {
   return raw
-    .replace(/^\{[^}]+\}\s*/g, '')        // Remove leading {tag}
-    .replace(/\s*\{[^}]+\}$/g, '')         // Remove trailing {tag}
-    .replace(/^\(\d+[^)]*\)\s*/gi, '')     // Remove leading (N something) count pattern
-    .replace(/<[^>]+>/g, '')               // Strip any residual HTML
+    .replace(/^\{[^}]+\}\s*/g, '')
+    .replace(/\s*\{[^}]+\}$/g, '')
+    .replace(/^\(\d+[^)]*\)\s*/gi, '')
+    .replace(/<[^>]+>/g, '')
     .replace(/\s{2,}/g, ' ')
     .split('|')[0].split('–')[0].trim()
 }
 
-/** Strip HTML tags from a string */
 function stripTags(html: string): string {
   return html
     .replace(/<[^>]+>/g, ' ')
@@ -99,7 +95,6 @@ function extractJsonLd(html: string): Recipe | null {
     try {
       const data = JSON.parse(match[1].trim())
 
-      // Normalise: handle @graph arrays or bare objects
       const candidates: unknown[] = Array.isArray(data['@graph'])
         ? data['@graph']
         : Array.isArray(data)
@@ -115,10 +110,8 @@ function extractJsonLd(html: string): Recipe | null {
 
         if (!isRecipe) continue
 
-        // Ingredients
         const ingredients = (item.recipeIngredient as string[] | undefined) ?? []
 
-        // Instructions
         let instructions: string[] = []
         const raw_inst = item.recipeInstructions
         if (Array.isArray(raw_inst)) {
@@ -126,7 +119,6 @@ function extractJsonLd(html: string): Recipe | null {
             .map((s: unknown) => {
               if (typeof s === 'string') return stripTags(s)
               const obj = s as Record<string, unknown>
-              // HowToSection → itemListElement
               if (Array.isArray(obj.itemListElement)) {
                 return (obj.itemListElement as Record<string, unknown>[])
                   .map((step) => stripTags(String(step.text || step.name || '')))
@@ -139,14 +131,12 @@ function extractJsonLd(html: string): Recipe | null {
           instructions = [stripTags(raw_inst)]
         }
 
-        // Servings
         const yieldRaw = item.recipeYield
         const yieldStr = Array.isArray(yieldRaw)
           ? String(yieldRaw[0])
           : String(yieldRaw ?? '')
         const servings = parseInt(yieldStr) || undefined
 
-        // Image
         const imgRaw = item.image
         const image =
           typeof imgRaw === 'string'
@@ -177,7 +167,6 @@ function extractJsonLd(html: string): Recipe | null {
 // ── HTML Fallback ──────────────────────────────────────────
 
 function extractHtmlFallback(html: string): Recipe {
-  // Title: og:title > h1 > <title>
   const title =
     html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i)?.[1] ||
     html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:title["']/i)?.[1] ||
@@ -185,12 +174,10 @@ function extractHtmlFallback(html: string): Recipe {
     html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ||
     'Imported Recipe'
 
-  // Image: og:image first
   const image =
     html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i)?.[1] ||
     html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:image["']/i)?.[1]
 
-  // Ingredients: look for li/span elements whose class mentions "ingredient"
   const ingMatches = html.match(
     /class="[^"]*ingredient[^"]*"[^>]*>([\s\S]*?)<\/(?:li|span|p|div)>/gi,
   ) ?? []
@@ -199,7 +186,6 @@ function extractHtmlFallback(html: string): Recipe {
     .filter((s) => s.length > 1 && s.length < 200)
     .slice(0, 40)
 
-  // Steps: look for li/p whose class mentions step|instruction|direction
   const stepMatches = html.match(
     /class="[^"]*(?:step|instruction|direction)[^"]*"[^>]*>([\s\S]*?)<\/(?:li|p|div)>/gi,
   ) ?? []
@@ -249,21 +235,20 @@ export async function importRecipe(
     })
 
     if (!res.ok) {
-      if (res.status === 403) {
+      // Both 402 (Payment Required) and 403 (Forbidden) indicate the site
+      // blocks automated access — surface the manual paste option immediately.
+      if (res.status === 402 || res.status === 403) {
         return {
-          error:
-            'This website blocks automatic import. Try a different recipe URL or paste the ingredients and instructions manually.',
+          error: `This website blocks automatic import (HTTP ${res.status}). No worries — you can paste the recipe manually below.`,
         }
       }
       return { error: `The page returned an error (HTTP ${res.status}). Try another URL.` }
     }
 
     const html = await res.text()
-
     const recipe = extractJsonLd(html) ?? extractHtmlFallback(html)
     recipe.sourceUrl = url
 
-    // Convert hero image to base64 so it never breaks in localStorage
     recipe.image = recipe.image
       ? await fetchImageAsBase64(recipe.image, url)
       : PLACEHOLDER_IMAGE
