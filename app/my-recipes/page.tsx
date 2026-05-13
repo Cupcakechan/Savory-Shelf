@@ -250,18 +250,24 @@ export default function MyRecipesPage() {
   // ── Mount ───────────────────────────────────────────────
 
   useEffect(() => {
-    Promise.all([
-      loadRecipes(),
-      supabase.auth.getSession(),
-    ]).then(async ([loaded, { data: { session } }]) => {
-      setLoading(false)
+    // getSession reads from a local cookie — near-instant.
+    // Once we have the user, run loadRecipes + loadPantry in parallel so
+    // the pantry cache arrives at the same time as the recipe list and
+    // badges can render without a second DB round-trip delay.
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setUser(session?.user ?? null)
 
-      if (session?.user) {
-        const { staples, cache } = await loadPantry(session.user.id)
-        if (staples.length > 0) {
-          runPantryCheck(loaded, staples, session.user.id, cache)
-        }
+      const [loaded, pantryResult] = await Promise.all([
+        loadRecipes(),
+        session?.user
+          ? loadPantry(session.user.id)
+          : Promise.resolve({ staples: [] as string[], cache: null }),
+      ])
+
+      setLoading(false)
+
+      if (session?.user && pantryResult.staples.length > 0) {
+        runPantryCheck(loaded, pantryResult.staples, session.user.id, pantryResult.cache)
       }
     })
 
