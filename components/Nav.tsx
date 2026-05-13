@@ -99,7 +99,17 @@ export default function Nav() {
               My Recipes page always remounts and re-fetches the latest recipes.
             */}
             <button
-              onClick={() => { router.refresh(); router.push('/my-recipes') }}
+              onClick={() => {
+                if (path === '/my-recipes') {
+                  // Already on this route — router.push would be a no-op.
+                  // Dispatch a custom event so MyRecipesPage can clear its
+                  // selected-recipe state and return to the list.
+                  window.dispatchEvent(new CustomEvent('savoryshelf:back-to-list'))
+                } else {
+                  router.refresh()
+                  router.push('/my-recipes')
+                }
+              }}
               className={linkCls('/my-recipes')}
             >
               My Recipes

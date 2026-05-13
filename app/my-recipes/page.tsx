@@ -160,6 +160,14 @@ export default function MyRecipesPage() {
   const [pantryMatches, setPantryMatches] = useState<Record<string, boolean>>({})
   const [showPantry, setShowPantry]       = useState(false)
 
+  // Clear the selected recipe when the user clicks "My Recipes" in the nav
+  // while already on this route (router.push would be a no-op in that case).
+  useEffect(() => {
+    const handler = () => setSelected(null)
+    window.addEventListener('savoryshelf:back-to-list', handler)
+    return () => window.removeEventListener('savoryshelf:back-to-list', handler)
+  }, [])
+
   // ── Data loaders ────────────────────────────────────────
 
   const loadRecipes = async (): Promise<Recipe[]> => {
