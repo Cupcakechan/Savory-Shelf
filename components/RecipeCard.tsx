@@ -5,14 +5,15 @@ interface Props {
   recipe: Recipe
   onClick: () => void
   onDelete: (id: string) => void
+  pantryMatch?: boolean
 }
 
 /** Remove {tag} count pollution from titles (e.g. "{3 Ingredient} Cookies" → "Cookies") */
 function cleanTitle(title: string): string {
   return title
-    .replace(/^\{[^}]+\}\s*/g, '')   // Remove leading {tag}
-    .replace(/\s*\{[^}]+\}$/g, '')    // Remove trailing {tag}
-    .replace(/^\(\d+[^)]*\)\s*/gi, '') // Remove leading (N count) patterns
+    .replace(/^\{[^}]+\}\s*/g, '')
+    .replace(/\s*\{[^}]+\}$/g, '')
+    .replace(/^\(\d+[^)]*\)\s*/gi, '')
     .trim()
 }
 
@@ -23,7 +24,7 @@ function ingredientCount(recipe: Recipe): string {
   return n === 1 ? '(1 ingredient)' : `(${n} ingredients)`
 }
 
-export default function RecipeCard({ recipe, onClick, onDelete }: Props) {
+export default function RecipeCard({ recipe, onClick, onDelete, pantryMatch }: Props) {
   const count = ingredientCount(recipe)
 
   return (
@@ -33,7 +34,7 @@ export default function RecipeCard({ recipe, onClick, onDelete }: Props) {
         className="text-left w-full bg-surface border border-border rounded-2xl overflow-hidden hover:border-accent/40 hover:shadow-md transition-all duration-200 active:scale-[.98]"
       >
         {/* Image */}
-        <div className="aspect-[4/3] bg-border overflow-hidden">
+        <div className="aspect-[4/3] bg-border overflow-hidden relative">
           {recipe.image ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -43,6 +44,15 @@ export default function RecipeCard({ recipe, onClick, onDelete }: Props) {
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-4xl select-none">🍽️</div>
+          )}
+
+          {/* Pantry match badge */}
+          {pantryMatch && (
+            <div className="absolute bottom-2 left-2">
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-emerald-500 text-white rounded-full px-2 py-0.5 shadow-sm leading-snug">
+                🥬 Pantry Match
+              </span>
+            </div>
           )}
         </div>
 
