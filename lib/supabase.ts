@@ -6,8 +6,8 @@ export const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   {
     auth: {
-      autoRefreshToken:  true,
-      persistSession:    true,
+      autoRefreshToken:   true,
+      persistSession:     true,
       detectSessionInUrl: true,
     },
   },
@@ -29,6 +29,7 @@ export function fromDbRecipe(row: any): Recipe {
     notes:        row.notes         ?? undefined,
     sourceUrl:    row.source_url    ?? undefined,
     savedAt:      row.created_at    ?? undefined,
+    tags:         row.tags          ?? [],
   }
 }
 
@@ -45,5 +46,6 @@ export function toDbRecipe(recipe: Recipe, userId: string) {
     instructions: recipe.instructions,
     notes:        recipe.notes        ?? null,
     source_url:   recipe.sourceUrl    ?? null,
+    tags:         recipe.tags         ?? [],
   }
 }

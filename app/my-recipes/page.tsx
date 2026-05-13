@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { BookOpen } from 'lucide-react'
 import Link from 'next/link'
 import type { User } from '@supabase/supabase-js'
@@ -16,6 +16,7 @@ export default function MyRecipesPage() {
   const [selected, setSelected] = useState<Recipe | null>(null)
   const [showAuth, setShowAuth] = useState(false)
   const [mounted, setMounted]   = useState(false)
+  const [activeTag, setActiveTag] = useState<string>('all')
 
   const loadRecipes = async () => {
     const { data } = await supabase
@@ -49,6 +50,27 @@ export default function MyRecipesPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // All unique tags across saved recipes, sorted alphabetically
+  const allTags = useMemo(
+    () => [...new Set(recipes.flatMap(r => r.tags ?? []))].sort(),
+    [recipes],
+  )
+
+  // Reset active tag if it no longer exists after a recipe refresh
+  useEffect(() => {
+    if (activeTag !== 'all' && !allTags.includes(activeTag)) {
+      setActiveTag('all')
+    }
+  }, [allTags, activeTag])
+
+  // Recipes shown in the grid after applying the active tag filter
+  const filteredRecipes = useMemo(
+    () => activeTag === 'all'
+      ? recipes
+      : recipes.filter(r => r.tags?.includes(activeTag)),
+    [recipes, activeTag],
+  )
+
   const handleDelete = async (id: string) => {
     await supabase.from('recipes').delete().eq('id', id)
     setRecipes(prev => prev.filter(r => r.id !== id))
@@ -56,7 +78,7 @@ export default function MyRecipesPage() {
 
   const handleBack = () => {
     setSelected(null)   // instant — user sees the grid immediately
-    loadRecipes()       // refresh in background
+    loadRecipes()       // refresh in background to pick up any tag changes
   }
 
   if (!mounted) return null
@@ -101,20 +123,66 @@ export default function MyRecipesPage() {
 
   return (
     <div className="py-8">
-      <div className="flex items-baseline justify-between mb-6">
+      {/* Header */}
+      <div className="flex items-baseline justify-between mb-5">
         <h1 className="font-display text-2xl font-bold text-text">My Recipes</h1>
-        <span className="text-sm text-muted">{recipes.length} saved</span>
+        <span className="text-sm text-muted">
+          {activeTag === 'all' ? `${recipes.length} saved` : `${filteredRecipes.length} of ${recipes.length}`}
+        </span>
       </div>
-      <div className="grid grid-cols-2 gap-4">
-        {recipes.map(r => (
-          <RecipeCard
-            key={r.id}
-            recipe={r}
-            onClick={() => setSelected(r)}
-            onDelete={handleDelete}
-          />
-        ))}
-      </div>
+
+      {/* ── Tag filter pills ─────────────────────────────── */}
+      {allTags.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto pb-1 mb-6 -mx-4 px-4 scrollbar-hide">
+          {/* "All" pill */}
+          <button
+            onClick={() => setActiveTag('all')}
+            className={`flex-shrink-0 text-xs font-semibold rounded-full px-3.5 py-1.5 transition-all ${
+              activeTag === 'all'
+                ? 'bg-accent text-white'
+                : 'bg-surface border border-border text-muted hover:border-accent/40 hover:text-text'
+            }`}
+          >
+            All
+          </button>
+
+          {allTags.map(tag => (
+            <button
+              key={tag}
+              onClick={() => setActiveTag(tag === activeTag ? 'all' : tag)}
+              className={`flex-shrink-0 text-xs font-semibold rounded-full px-3.5 py-1.5 capitalize transition-all ${
+                activeTag === tag
+                  ? 'bg-accent text-white'
+                  : 'bg-surface border border-border text-muted hover:border-accent/40 hover:text-text'
+              }`}
+            >
+              {tag}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── Recipe grid ──────────────────────────────────── */}
+      {filteredRecipes.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <span className="text-4xl mb-4 select-none">🏷️</span>
+          <p className="text-muted text-sm">No recipes in <span className="text-text font-medium capitalize">{activeTag}</span> yet.</p>
+          <button onClick={() => setActiveTag('all')} className="mt-3 text-xs text-accent hover:underline transition-colors">
+            Show all recipes
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-4">
+          {filteredRecipes.map(r => (
+            <RecipeCard
+              key={r.id}
+              recipe={r}
+              onClick={() => setSelected(r)}
+              onDelete={handleDelete}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

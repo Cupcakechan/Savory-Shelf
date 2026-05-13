@@ -10,4 +10,5 @@ export interface Recipe {
   notes?: string
   sourceUrl?: string
   savedAt?: string
+  tags?: string[]         // user-defined collection tags, lowercase + trimmed
 }

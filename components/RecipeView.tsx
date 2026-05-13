@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Clock, Users, Check, Bookmark, BookmarkCheck, ChevronLeft,
   ExternalLink, NotebookPen, Share2, Minus, Plus, Languages,
-  Sparkles, X, CheckCircle,
+  Sparkles, X, CheckCircle, Tag,
 } from 'lucide-react'
 import type { User } from '@supabase/supabase-js'
 import { Recipe } from '@/lib/types'
@@ -21,7 +21,7 @@ import AuthModal from './AuthModal'
 
 function formatTime(t: string | undefined): string {
   if (!t) return ''
-  if (!t.startsWith('P')) return t // Already human-readable
+  if (!t.startsWith('P')) return t
   const m = t.match(/P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?)?/)
   if (!m) return t
   const h = parseInt(m[1] || '0') * 24 + parseInt(m[2] || '0')
@@ -263,6 +263,18 @@ export default function RecipeView({
   const [substitutesResult, setSubstitutesResult] = useState<SubstitutesResult | null>(null)
   const [substitutesCopied, setSubstitutesCopied] = useState(false)
 
+  // ── Collections / Tags state ──────────────────────────
+  const [tags, setTags]                 = useState<string[]>(initialRecipe.tags ?? [])
+  const [userTags, setUserTags]         = useState<string[]>([])
+  const [showTagInput, setShowTagInput] = useState(false)
+  const [tagInput, setTagInput]         = useState('')
+  const tagInputRef                     = useRef<HTMLInputElement>(null)
+
+  // Suggestions: user's existing tags not already on this recipe, matching current input
+  const tagSuggestions = userTags.filter(
+    t => !tags.includes(t) && t.includes(tagInput.toLowerCase().trim()),
+  )
+
   // Hide translate button on already-translated recipes
   const isTranslated = recipe.title.includes('(translated)')
 
@@ -274,6 +286,21 @@ export default function RecipeView({
         const { data } = await supabase.from('recipes').select('id').eq('id', recipe.id).maybeSingle()
         setSaved(!!data)
       }
+      // Fetch all unique tags this user has used across their recipes, for the dropdown
+      if (session?.user) {
+        const { data: tagRows } = await supabase
+          .from('recipes')
+          .select('tags')
+          .eq('user_id', session.user.id)
+        if (tagRows) {
+          const flat = [
+            ...new Set(
+              (tagRows as { tags: string[] | null }[]).flatMap(r => r.tags ?? [])
+            ),
+          ].sort()
+          setUserTags(flat)
+        }
+      }
     })
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
       setUser(session?.user ?? null)
@@ -281,6 +308,11 @@ export default function RecipeView({
     return () => subscription.unsubscribe()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recipe.id, initialSaved, readOnly])
+
+  // Focus tag input as soon as it appears
+  useEffect(() => {
+    if (showTagInput) tagInputRef.current?.focus()
+  }, [showTagInput])
 
   const multiplier = servings / baseServings
 
@@ -330,17 +362,12 @@ export default function RecipeView({
     if (!translateResult) return
     const translatedRecipe: Recipe = {
       ...recipe,
-      // Keep the same ID so the original row is replaced, not duplicated
       title: `${translateResult.title} (translated)`,
       ingredients: translateResult.ingredients,
       instructions: translateResult.instructions,
     }
-    // Update local state immediately — subsequent actions (e.g. Suggest Substitutes)
-    // will now use the translated ingredients, not the original ones
     setRecipe(translatedRecipe)
     if (user) {
-      // upsert: updates the existing row if already saved, inserts if not —
-      // either way the original version is never left behind
       await supabase.from('recipes').upsert(toDbRecipe(translatedRecipe, user.id))
       setSaved(true)
     }
@@ -363,6 +390,53 @@ export default function RecipeView({
     setSubstitutesCopied(true)
     setTimeout(() => { setSubstitutesCopied(false); setSubstitutesResult(null) }, 1800)
   }
+
+  // ── Tag handlers ────────────────────────────────────
+
+  const persistTags = async (newTags: string[]) => {
+    if (user && saved) {
+      await supabase.from('recipes').update({ tags: newTags }).eq('id', recipe.id)
+    }
+  }
+
+  const addTag = async (raw: string) => {
+    const tag = raw.trim().toLowerCase()
+    if (!tag || tags.includes(tag)) {
+      setShowTagInput(false)
+      setTagInput('')
+      return
+    }
+    const newTags = [...tags, tag]
+    setTags(newTags)
+    // Keep recipe state in sync so toDbRecipe always carries latest tags
+    setRecipe(r => ({ ...r, tags: newTags }))
+    setTagInput('')
+    setShowTagInput(false)
+    if (!userTags.includes(tag)) setUserTags(prev => [...prev, tag].sort())
+    await persistTags(newTags)
+  }
+
+  const removeTag = async (tag: string) => {
+    const newTags = tags.filter(t => t !== tag)
+    setTags(newTags)
+    setRecipe(r => ({ ...r, tags: newTags }))
+    await persistTags(newTags)
+  }
+
+  const handleTagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      // If there's one suggestion that starts with what the user typed, prefer it
+      const match = tagSuggestions.length === 1 && tagInput && tagSuggestions[0].startsWith(tagInput.toLowerCase())
+      addTag(match ? tagSuggestions[0] : tagInput)
+    }
+    if (e.key === 'Escape') {
+      setShowTagInput(false)
+      setTagInput('')
+    }
+  }
+
+  // ── Render ──────────────────────────────────────────
 
   return (
     <>
@@ -402,12 +476,77 @@ export default function RecipeView({
           )}
         </div>
 
-        {/* Badges — formatTime handles both ISO 8601 and already-formatted strings */}
+        {/* Time / servings badges */}
         {(recipe.prepTime || recipe.cookTime || recipe.servings) && (
-          <div className="flex flex-wrap gap-2 mb-8">
+          <div className="flex flex-wrap gap-2 mb-6">
             {recipe.prepTime && <Chip icon={<Clock size={13} />} label={`Prep ${formatTime(recipe.prepTime)}`} />}
             {recipe.cookTime && <Chip icon={<Clock size={13} />} label={`Cook ${formatTime(recipe.cookTime)}`} />}
             {recipe.servings && <Chip icon={<Users size={13} />} label={`${recipe.servings} servings`} />}
+          </div>
+        )}
+
+        {/* ── Collections / Tags ─────────────────────── */}
+        {!readOnly && saved && (
+          <div className="mb-8">
+            <div className="flex items-center flex-wrap gap-2">
+
+              {/* Existing tag chips with X to remove */}
+              {tags.map(tag => (
+                <span
+                  key={tag}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-accent bg-accent/10 border border-accent/20 rounded-full pl-3 pr-2 py-1.5 capitalize"
+                >
+                  {tag}
+                  <button
+                    onClick={() => removeTag(tag)}
+                    aria-label={`Remove ${tag}`}
+                    className="ml-0.5 rounded-full p-0.5 hover:bg-accent/20 hover:text-text transition-colors"
+                  >
+                    <X size={11} />
+                  </button>
+                </span>
+              ))}
+
+              {/* Add to Collection — button or inline input */}
+              {!showTagInput ? (
+                <button
+                  onClick={() => setShowTagInput(true)}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-muted border border-dashed border-border rounded-full px-3 py-1.5 hover:border-accent/50 hover:text-text transition-all active:scale-[.97]"
+                >
+                  <Tag size={11} />
+                  Add to Collection
+                </button>
+              ) : (
+                <div className="relative">
+                  <input
+                    ref={tagInputRef}
+                    type="text"
+                    value={tagInput}
+                    onChange={e => setTagInput(e.target.value)}
+                    onKeyDown={handleTagKeyDown}
+                    // onMouseDown on dropdown items fires before onBlur, so we delay to let those click handlers run
+                    onBlur={() => setTimeout(() => { setShowTagInput(false); setTagInput('') }, 150)}
+                    placeholder="Collection name…"
+                    className="text-xs rounded-full px-3.5 py-1.5 bg-surface border border-accent/40 focus:border-accent text-text placeholder-subtle outline-none w-36 transition-colors"
+                  />
+                  {/* Dropdown of existing user tag suggestions */}
+                  {tagSuggestions.length > 0 && (
+                    <div className="absolute top-full left-0 mt-1.5 bg-bg border border-border rounded-xl shadow-xl overflow-hidden z-20 min-w-[148px]">
+                      {tagSuggestions.map(t => (
+                        <button
+                          key={t}
+                          // onMouseDown instead of onClick so it fires before the input's onBlur
+                          onMouseDown={e => { e.preventDefault(); addTag(t) }}
+                          className="w-full text-left text-xs px-3.5 py-2.5 hover:bg-surface text-text capitalize transition-colors"
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
