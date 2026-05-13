@@ -10,12 +10,38 @@ import RecipeCard from '@/components/RecipeCard'
 import RecipeView from '@/components/RecipeView'
 import AuthModal from '@/components/AuthModal'
 
+// ── Skeleton ──────────────────────────────────────────────
+
+function RecipeGridSkeleton() {
+  return (
+    <div className="py-8">
+      <div className="flex items-baseline justify-between mb-5">
+        <div className="h-7 w-28 bg-surface rounded-xl animate-pulse" />
+        <div className="h-4 w-14 bg-surface rounded-full animate-pulse" />
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="bg-surface border border-border rounded-2xl overflow-hidden animate-pulse">
+            <div className="aspect-[4/3] bg-border" />
+            <div className="p-4 space-y-2.5">
+              <div className="h-3.5 bg-border rounded-full w-3/4" />
+              <div className="h-3 bg-border rounded-full w-1/2" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Page ──────────────────────────────────────────────────
+
 export default function MyRecipesPage() {
-  const [recipes, setRecipes]   = useState<Recipe[]>([])
-  const [user, setUser]         = useState<User | null>(null)
-  const [selected, setSelected] = useState<Recipe | null>(null)
-  const [showAuth, setShowAuth] = useState(false)
-  const [mounted, setMounted]   = useState(false)
+  const [recipes, setRecipes]     = useState<Recipe[]>([])
+  const [user, setUser]           = useState<User | null>(null)
+  const [selected, setSelected]   = useState<Recipe | null>(null)
+  const [showAuth, setShowAuth]   = useState(false)
+  const [loading, setLoading]     = useState(true)
   const [activeTag, setActiveTag] = useState<string>('all')
 
   const loadRecipes = async () => {
@@ -27,12 +53,14 @@ export default function MyRecipesPage() {
   }
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        setUser(session.user)
-        await loadRecipes()
-      }
-      setMounted(true)
+    // Fire loadRecipes immediately — no need to wait for getSession() first.
+    // The Supabase client already holds the session token in memory, so RLS
+    // filters the results correctly. This removes the sequential delay.
+    loadRecipes().finally(() => setLoading(false))
+
+    // Resolve user identity in parallel for the sign-in prompt
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_, session) => {
@@ -43,7 +71,7 @@ export default function MyRecipesPage() {
         setUser(null)
         setRecipes([])
       }
-      setMounted(true)
+      setLoading(false)
     })
 
     return () => subscription.unsubscribe()
@@ -77,11 +105,12 @@ export default function MyRecipesPage() {
   }
 
   const handleBack = () => {
-    setSelected(null)   // instant — user sees the grid immediately
-    loadRecipes()       // refresh in background to pick up any tag changes
+    setSelected(null)
+    loadRecipes()
   }
 
-  if (!mounted) return null
+  // Show skeleton immediately — no more blank screen while loading
+  if (loading) return <RecipeGridSkeleton />
 
   if (selected) {
     return <RecipeView recipe={selected} onBack={handleBack} initialSaved={true} />
@@ -134,7 +163,6 @@ export default function MyRecipesPage() {
       {/* ── Tag filter pills ─────────────────────────────── */}
       {allTags.length > 0 && (
         <div className="flex gap-2 overflow-x-auto pb-1 mb-6 -mx-4 px-4 scrollbar-hide">
-          {/* "All" pill */}
           <button
             onClick={() => setActiveTag('all')}
             className={`flex-shrink-0 text-xs font-semibold rounded-full px-3.5 py-1.5 transition-all ${
@@ -145,7 +173,6 @@ export default function MyRecipesPage() {
           >
             All
           </button>
-
           {allTags.map(tag => (
             <button
               key={tag}
