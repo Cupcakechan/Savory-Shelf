@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Link2, Loader2, AlertCircle, ClipboardPaste, ChevronLeft, Sparkles } from 'lucide-react'
-import { importRecipe } from '@/lib/actions'
+import { importRecipe, fetchRecipeImage } from '@/lib/actions'
 import { parseRecipeText } from '@/lib/ai'
 import { Recipe } from '@/lib/types'
 import RecipeView from '@/components/RecipeView'
@@ -34,7 +34,12 @@ function ManualPasteForm({ onRecipe, onCancel, blockError }: ManualFormProps) {
   const [servings, setServings]             = useState('')
   const [prepTime, setPrepTime]             = useState('')
   const [cookTime, setCookTime]             = useState('')
+  const [image, setImage]                   = useState<string | undefined>()
   const [formError, setFormError]           = useState('')
+
+  // Stable recipe ID — pre-generated so the image upload uses the same ID
+  // as the recipe that will be created on submit.
+  const [recipeId] = useState(() => crypto.randomUUID())
 
   const handleParse = async () => {
     if (!rawText.trim()) return
@@ -59,6 +64,14 @@ function ManualPasteForm({ onRecipe, onCancel, blockError }: ManualFormProps) {
     setCookTime(result.cookTime ?? '')
     setParsed(true)
     setParseMsg('')
+
+    // If Grok found an image URL, upload to Storage in the background.
+    // The image field updates silently when ready — no loading state needed.
+    if (result.imageUrl) {
+      fetchRecipeImage(result.imageUrl, recipeId).then(({ url }) => {
+        if (url) setImage(url)
+      })
+    }
   }
 
   const handleSubmit = () => {
@@ -71,8 +84,9 @@ function ManualPasteForm({ onRecipe, onCancel, blockError }: ManualFormProps) {
     if (!ingredients.length) { setFormError('Please add at least one ingredient.'); return }
 
     const recipe: Recipe = {
-      id:           crypto.randomUUID(),
+      id:           recipeId,
       title:        trimmedTitle,
+      image:        image,
       ingredients,
       instructions,
       servings:     !isNaN(parsedServings ?? NaN) ? parsedServings : undefined,
@@ -256,14 +270,11 @@ export default function ImportPage() {
     if (e.key === 'Enter') handleImport()
   }
 
-  // ── Recipe view ────────────────────────────────────────
   if (recipe) {
     return (
       <RecipeView
         recipe={recipe}
         onBack={() => {
-          // Bust the router cache now so My Recipes is guaranteed fresh
-          // whether the user navigates there via the nav or the back button.
           router.refresh()
           setRecipe(null)
           setUrl('')
@@ -274,7 +285,6 @@ export default function ImportPage() {
     )
   }
 
-  // ── Manual paste form ──────────────────────────────────
   if (showManual) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-3.5rem)] pb-12">
@@ -287,7 +297,6 @@ export default function ImportPage() {
     )
   }
 
-  // ── Import form ────────────────────────────────────────
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-3.5rem)] pb-12">
       <div className="mb-10 text-center">

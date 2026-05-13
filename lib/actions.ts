@@ -74,6 +74,20 @@ async function uploadImageToStorage(
   }
 }
 
+// ── Fetch image for manual paste form ────────────────────
+
+/**
+ * Called from the manual paste form after Grok extracts an image URL.
+ * Uploads the image to Supabase Storage and returns the public URL.
+ */
+export async function fetchRecipeImage(
+  imageUrl: string,
+  recipeId: string,
+): Promise<{ url?: string }> {
+  const url = await uploadImageToStorage(imageUrl, imageUrl, recipeId)
+  return { url }
+}
+
 // ── Lazy migration: base64 → Storage ─────────────────────
 
 /**

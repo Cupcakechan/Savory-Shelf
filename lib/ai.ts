@@ -73,9 +73,12 @@ Guidelines:
   "Fry Time:", "Simmer Time:", or similar. \
   Return as a concise human-readable string like "30 min", "1 hr 15 min", or null if absent. \
   Do NOT use "Total Time" as cookTime — only use an explicit cook/bake label.
+- imageUrl: if the text contains a full, absolute image URL that represents the main recipe \
+  photo (e.g. from an og:image tag, a src= attribute, or a clearly labelled photo URL), \
+  return it as a string. Only return absolute URLs starting with https://. Otherwise null.
 
 Return ONLY a valid JSON object — no markdown, no code fences, no commentary outside the JSON:
-{"title":"...","ingredients":["..."],"instructions":["..."],"servings":null,"prepTime":null,"cookTime":null}`
+{"title":"...","ingredients":["..."],"instructions":["..."],"servings":null,"prepTime":null,"cookTime":null,"imageUrl":null}`
 
 const PANTRY_MATCH_SYSTEM = `\
 You are a culinary expert. Given a list of pantry staple ingredients, determine which recipes can \
@@ -117,6 +120,7 @@ export interface ParsedRecipeResult {
   servings?: number | null
   prepTime?: string | null
   cookTime?: string | null
+  imageUrl?: string | null
 }
 
 // ── Server Actions ────────────────────────────────────────
