@@ -17,7 +17,6 @@ import KitchenNotesModal from './KitchenNotesModal'
 import AuthModal from './AuthModal'
 
 // ── Time formatter ────────────────────────────────────────
-// Handles both ISO 8601 (PT1H30M, P0DT0H10M) and already-formatted strings
 
 function formatTime(t: string | undefined): string {
   if (!t) return ''
@@ -32,7 +31,6 @@ function formatTime(t: string | undefined): string {
   return t
 }
 
-/** Remove {tag} pollution from displayed titles without mutating the recipe object */
 function cleanTitle(title: string): string {
   return title
     .replace(/^\{[^}]+\}\s*/g, '')
@@ -270,13 +268,29 @@ export default function RecipeView({
   const [tagInput, setTagInput]         = useState('')
   const tagInputRef                     = useRef<HTMLInputElement>(null)
 
-  // Suggestions: user's existing tags not already on this recipe, matching current input
   const tagSuggestions = userTags.filter(
     t => !tags.includes(t) && t.includes(tagInput.toLowerCase().trim()),
   )
 
-  // Hide translate button on already-translated recipes
   const isTranslated = recipe.title.includes('(translated)')
+
+  // ── Lazy image fetch ──────────────────────────────────
+  // The My Recipes list query omits image_base64 for performance.
+  // When a saved recipe is opened without an image, fetch it once here.
+  useEffect(() => {
+    if (recipe.image || !initialSaved || readOnly) return
+    supabase
+      .from('recipes')
+      .select('image_base64')
+      .eq('id', recipe.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.image_base64) {
+          setRecipe(r => ({ ...r, image: data.image_base64 }))
+        }
+      })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recipe.id])
 
   useEffect(() => {
     if (readOnly) return
@@ -286,7 +300,6 @@ export default function RecipeView({
         const { data } = await supabase.from('recipes').select('id').eq('id', recipe.id).maybeSingle()
         setSaved(!!data)
       }
-      // Fetch all unique tags this user has used across their recipes, for the dropdown
       if (session?.user) {
         const { data: tagRows } = await supabase
           .from('recipes')
@@ -309,7 +322,6 @@ export default function RecipeView({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recipe.id, initialSaved, readOnly])
 
-  // Focus tag input as soon as it appears
   useEffect(() => {
     if (showTagInput) tagInputRef.current?.focus()
   }, [showTagInput])
@@ -320,8 +332,6 @@ export default function RecipeView({
     setChecked(prev => { const next = new Set(prev); next.has(i) ? next.delete(i) : next.add(i); return next })
 
   const toggleSave = async () => {
-    // Refresh session if local state is stale — prevents false sign-in prompts
-    // when the user navigates quickly before the initial getSession() resolves.
     let currentUser = user
     if (!currentUser) {
       const { data: { session } } = await supabase.auth.getSession()
@@ -340,7 +350,6 @@ export default function RecipeView({
   }
 
   const handleShare = async () => {
-    // Same session-refresh guard as toggleSave
     let currentUser = user
     if (!currentUser) {
       const { data: { session } } = await supabase.auth.getSession()
@@ -425,7 +434,6 @@ export default function RecipeView({
     }
     const newTags = [...tags, tag]
     setTags(newTags)
-    // Keep recipe state in sync so toDbRecipe always carries latest tags
     setRecipe(r => ({ ...r, tags: newTags }))
     setTagInput('')
     setShowTagInput(false)
@@ -443,7 +451,6 @@ export default function RecipeView({
   const handleTagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault()
-      // If there's one suggestion that starts with what the user typed, prefer it
       const match = tagSuggestions.length === 1 && tagInput && tagSuggestions[0].startsWith(tagInput.toLowerCase())
       addTag(match ? tagSuggestions[0] : tagInput)
     }
@@ -506,8 +513,6 @@ export default function RecipeView({
         {!readOnly && saved && (
           <div className="mb-8">
             <div className="flex items-center flex-wrap gap-2">
-
-              {/* Existing tag chips with X to remove */}
               {tags.map(tag => (
                 <span
                   key={tag}
@@ -524,7 +529,6 @@ export default function RecipeView({
                 </span>
               ))}
 
-              {/* Add to Collection — button or inline input */}
               {!showTagInput ? (
                 <button
                   onClick={() => setShowTagInput(true)}
@@ -541,18 +545,15 @@ export default function RecipeView({
                     value={tagInput}
                     onChange={e => setTagInput(e.target.value)}
                     onKeyDown={handleTagKeyDown}
-                    // onMouseDown on dropdown items fires before onBlur, so we delay to let those click handlers run
                     onBlur={() => setTimeout(() => { setShowTagInput(false); setTagInput('') }, 150)}
                     placeholder="Collection name…"
                     className="text-xs rounded-full px-3.5 py-1.5 bg-surface border border-accent/40 focus:border-accent text-text placeholder-subtle outline-none w-36 transition-colors"
                   />
-                  {/* Dropdown of existing user tag suggestions */}
                   {tagSuggestions.length > 0 && (
                     <div className="absolute top-full left-0 mt-1.5 bg-bg border border-border rounded-xl shadow-xl overflow-hidden z-20 min-w-[148px]">
                       {tagSuggestions.map(t => (
                         <button
                           key={t}
-                          // onMouseDown instead of onClick so it fires before the input's onBlur
                           onMouseDown={e => { e.preventDefault(); addTag(t) }}
                           className="w-full text-left text-xs px-3.5 py-2.5 hover:bg-surface text-text capitalize transition-colors"
                         >
@@ -590,7 +591,7 @@ export default function RecipeView({
           </div>
         )}
 
-        {/* AI buttons — translate hidden on already-translated recipes */}
+        {/* AI buttons */}
         {!readOnly && (
           <div className="flex gap-3 mb-9">
             {!isTranslated && (

@@ -20,6 +20,11 @@ interface PantryCache {
 
 const MAX_PANTRY = 10
 
+// Explicit column list — intentionally excludes image_base64 so the list
+// query stays lean. RecipeView fetches the image lazily when a card is opened.
+const LIST_COLUMNS =
+  'id, title, prep_time, cook_time, servings, ingredients, instructions, notes, source_url, created_at, tags'
+
 // ── Pantry Modal ──────────────────────────────────────────
 
 function PantryModal({
@@ -182,12 +187,15 @@ export default function MyRecipesPage() {
 
   // ── Data loaders ────────────────────────────────────────
 
-  const loadRecipes = async () => {
+  // Returns the loaded recipes so callers can reuse the data without a second fetch.
+  const loadRecipes = async (): Promise<Recipe[]> => {
     const { data } = await supabase
       .from('recipes')
-      .select('*')
+      .select(LIST_COLUMNS)
       .order('created_at', { ascending: false })
-    if (data) setRecipes(data.map(fromDbRecipe))
+    const loaded = data ? data.map(fromDbRecipe) : []
+    setRecipes(loaded)
+    return loaded
   }
 
   const loadPantry = async (userId: string): Promise<{ staples: string[]; cache: PantryCache | null }> => {
@@ -197,7 +205,6 @@ export default function MyRecipesPage() {
       .eq('user_id', userId)
       .maybeSingle()
     const staples = data?.staples ?? []
-    // match_cache is {} by default (empty object) — treat that as null
     const rawCache = data?.match_cache
     const cache: PantryCache | null =
       rawCache && typeof rawCache === 'object' && 'pantryHash' in rawCache
@@ -211,7 +218,6 @@ export default function MyRecipesPage() {
   const savePantry = async (staples: string[]) => {
     if (!user) return
     setPantry(staples)
-    // Invalidate match cache so Grok re-runs with new staples
     setPantryCache(null)
     setPantryMatches({})
     await supabase.from('pantry').upsert({ user_id: user.id, staples, match_cache: {} })
@@ -232,14 +238,12 @@ export default function MyRecipesPage() {
 
     const hash = [...staples].sort().join('|')
 
-    // Cache hit: pantry unchanged and all recipes are covered
     if (cache?.pantryHash === hash) {
       const uncached = recipeList.filter(r => !(r.id in cache.results))
       if (uncached.length === 0) {
         setPantryMatches(cache.results)
         return
       }
-      // Use cached results immediately, then check only uncached recipes
       setPantryMatches(cache.results)
       const { result } = await checkPantryMatchBatch(
         uncached.map(r => ({ id: r.id, ingredients: r.ingredients })),
@@ -248,7 +252,6 @@ export default function MyRecipesPage() {
       if (result) {
         const merged = { ...cache.results, ...result }
         setPantryMatches(merged)
-        // Fire-and-forget cache update
         supabase.from('pantry')
           .update({ match_cache: { pantryHash: hash, results: merged } })
           .eq('user_id', userId)
@@ -256,7 +259,6 @@ export default function MyRecipesPage() {
       return
     }
 
-    // Cache miss or stale — run full batch check
     const { result } = await checkPantryMatchBatch(
       recipeList.map(r => ({ id: r.id, ingredients: r.ingredients })),
       staples,
@@ -265,7 +267,6 @@ export default function MyRecipesPage() {
       setPantryMatches(result)
       const newCache: PantryCache = { pantryHash: hash, results: result }
       setPantryCache(newCache)
-      // Fire-and-forget cache write
       supabase.from('pantry')
         .update({ match_cache: newCache })
         .eq('user_id', userId)
@@ -275,22 +276,20 @@ export default function MyRecipesPage() {
   // ── Mount ───────────────────────────────────────────────
 
   useEffect(() => {
-    loadRecipes().finally(() => setLoading(false))
-
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    // Run both in parallel — reuse the recipe list for pantry matching
+    // so we never fetch recipes twice on initial load.
+    Promise.all([
+      loadRecipes(),
+      supabase.auth.getSession(),
+    ]).then(async ([loaded, { data: { session } }]) => {
+      setLoading(false)
       setUser(session?.user ?? null)
+
       if (session?.user) {
         const { staples, cache } = await loadPantry(session.user.id)
-        // Pantry check runs in the background once recipes are also loaded
         if (staples.length > 0) {
-          const { data } = await supabase
-            .from('recipes')
-            .select('*')
-            .order('created_at', { ascending: false })
-          if (data) {
-            const loaded = data.map(fromDbRecipe)
-            runPantryCheck(loaded, staples, session.user.id, cache)
-          }
+          // Reuse `loaded` — no second DB round-trip needed
+          runPantryCheck(loaded, staples, session.user.id, cache)
         }
       }
     })
