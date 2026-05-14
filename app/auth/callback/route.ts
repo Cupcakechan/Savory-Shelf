@@ -12,8 +12,10 @@ import { createSupabaseServerClient } from '@/lib/supabase-server'
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
-  // Optional deep-link: redirect to a specific page after auth
-  const next = searchParams.get('next') ?? '/'
+  // Validate `next` to prevent open-redirect attacks.
+  // Only accept relative paths that start with exactly one `/` (not `//evil.com`).
+  const rawNext = searchParams.get('next') ?? '/'
+  const next = rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : '/'
 
   if (code) {
     const supabase = await createSupabaseServerClient()

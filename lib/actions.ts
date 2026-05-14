@@ -3,6 +3,77 @@
 import { Recipe } from './types'
 import { supabaseAdmin } from './supabase-admin'
 
+// ── SSRF guard ────────────────────────────────────────────
+
+/**
+ * Returns true only for safe, publicly-routable HTTPS URLs.
+ * Blocks http://, private IPv4 ranges, localhost, and IPv6 private ranges.
+ */
+function isSafeUrl(raw: string): boolean {
+  let url: URL
+  try { url = new URL(raw) } catch { return false }
+  if (url.protocol !== 'https:') return false
+
+  const h = url.hostname.toLowerCase()
+
+  if (h === 'localhost' || h === '0.0.0.0') return false
+
+  // Private / reserved IPv4
+  if (
+    /^127\./.test(h) ||                          // loopback
+    /^10\./.test(h) ||                           // RFC 1918
+    /^192\.168\./.test(h) ||                     // RFC 1918
+    /^172\.(1[6-9]|2[0-9]|3[01])\./.test(h) ||  // RFC 1918
+    /^169\.254\./.test(h) ||                     // link-local
+    /^0\./.test(h)                               // "this" network
+  ) return false
+
+  // IPv6 loopback / unique-local
+  if (h === '::1' || /^\[?fc/i.test(h) || /^\[?fd/i.test(h)) return false
+
+  return true
+}
+
+/**
+ * SSRF-safe fetch: validates every URL in the redirect chain and stops
+ * after maxRedirects hops. A single AbortSignal covers the entire chain.
+ */
+async function safeFetch(
+  url: string,
+  options: Omit<RequestInit, 'redirect'>,
+  maxRedirects = 3,
+  timeoutMs = 10_000,
+): Promise<Response> {
+  const signal = AbortSignal.timeout(timeoutMs)
+  let current = url
+
+  for (let hop = 0; hop <= maxRedirects; hop++) {
+    if (!isSafeUrl(current)) {
+      throw new Error(`Blocked unsafe URL: ${new URL(current).hostname}`)
+    }
+    const res = await fetch(current, { ...options, redirect: 'manual', signal })
+    if (res.status >= 300 && res.status < 400) {
+      const loc = res.headers.get('location')
+      if (!loc) throw new Error('Redirect with no Location header')
+      current = new URL(loc, current).href   // resolve relative redirects
+    } else {
+      return res
+    }
+  }
+  throw new Error('Too many redirects')
+}
+
+// ── MIME allowlist ────────────────────────────────────────
+
+const ALLOWED_IMAGE_MIMES = new Set([
+  'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif',
+])
+
+// ── Max sizes ─────────────────────────────────────────────
+
+const MAX_HTML_BYTES  = 5_000_000  // 5 MB — sane cap for recipe pages
+const MAX_IMAGE_BYTES =   600_000  // 600 KB — unchanged from before
+
 // ── Placeholder SVG ───────────────────────────────────────
 // Shown in-memory when image fetch/upload fails. Never stored in the DB.
 
@@ -39,22 +110,24 @@ async function uploadImageToStorage(
       ? imageUrl
       : new URL(imageUrl, pageUrl).href
 
-    const res = await fetch(resolved, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; RecipeBot/1.0)' },
-      signal: AbortSignal.timeout(6_000),
-    })
+    // safeFetch validates the URL (SSRF) and follows up to 3 redirects
+    const res = await safeFetch(
+      resolved,
+      { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; RecipeBot/1.0)' } },
+      3,
+      6_000,
+    )
     if (!res.ok) return undefined
 
-    const contentType = res.headers.get('content-type') ?? ''
-    if (!contentType.startsWith('image/')) return undefined
+    const mimeType = (res.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase()
+    if (!ALLOWED_IMAGE_MIMES.has(mimeType)) return undefined
 
     const size = parseInt(res.headers.get('content-length') ?? '0')
-    if (size > 600_000) return undefined
+    if (size > MAX_IMAGE_BYTES) return undefined
 
     const buf = await res.arrayBuffer()
-    if (buf.byteLength > 600_000) return undefined
+    if (buf.byteLength > MAX_IMAGE_BYTES) return undefined
 
-    const mimeType = contentType.split(';')[0]
     const ext      = mimeType.split('/')[1] ?? 'jpg'
     const fileName = `${recipeId}.${ext}`
 
@@ -302,27 +375,33 @@ function extractHtmlFallback(html: string): Recipe {
 export async function importRecipe(
   url: string,
 ): Promise<{ recipe?: Recipe; error?: string }> {
-  if (!url.startsWith('http://') && !url.startsWith('https://')) {
-    return { error: 'Please enter a valid URL starting with http:// or https://' }
+  // Auto-upgrade http → https for convenience, then validate
+  const target = url.trim().startsWith('http://')
+    ? 'https://' + url.trim().slice(7)
+    : url.trim()
+
+  if (!isSafeUrl(target)) {
+    return { error: 'Please enter a valid https:// recipe URL from a public website.' }
   }
 
   try {
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
-          '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Cache-Control': 'max-age=0',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'none',
-        'Upgrade-Insecure-Requests': '1',
+    const res = await safeFetch(
+      target,
+      {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+            '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Cache-Control': 'max-age=0',
+          'Upgrade-Insecure-Requests': '1',
+        },
+        cache: 'no-store',
       },
-      next: { revalidate: 0 },
-    })
+      3,
+      10_000,
+    )
 
     if (!res.ok) {
       if (res.status === 402 || res.status === 403) {
@@ -333,18 +412,40 @@ export async function importRecipe(
       return { error: `The page returned an error (HTTP ${res.status}). Try another URL.` }
     }
 
-    const html   = await res.text()
+    // Reject non-HTML responses (PDFs, images, APIs, etc.)
+    const ct = res.headers.get('content-type') ?? ''
+    if (!ct.includes('text/html') && !ct.includes('application/xhtml+xml')) {
+      return { error: 'That URL doesn\'t appear to be a recipe page. Try another URL.' }
+    }
+
+    // Guard against oversized pages before reading the body
+    const cl = parseInt(res.headers.get('content-length') ?? '0')
+    if (cl > MAX_HTML_BYTES) {
+      return { error: 'That page is too large to import. Try another URL.' }
+    }
+
+    const html = await res.text()
+    if (html.length > MAX_HTML_BYTES) {
+      return { error: 'That page is too large to import. Try another URL.' }
+    }
+
     const recipe = extractJsonLd(html) ?? extractHtmlFallback(html)
-    recipe.sourceUrl = url
+    recipe.sourceUrl = target
 
     // Upload image to Supabase Storage; fall back to in-memory placeholder
     recipe.image = recipe.image
-      ? (await uploadImageToStorage(recipe.image, url, recipe.id)) ?? PLACEHOLDER_IMAGE
+      ? (await uploadImageToStorage(recipe.image, target, recipe.id)) ?? PLACEHOLDER_IMAGE
       : PLACEHOLDER_IMAGE
 
     return { recipe }
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error'
+    if (msg.includes('Blocked unsafe URL')) {
+      return { error: 'That URL points to a restricted address and cannot be imported.' }
+    }
+    if (msg.includes('Too many redirects')) {
+      return { error: 'That URL redirects too many times. Try the final destination URL directly.' }
+    }
     return { error: `Could not fetch the page: ${msg}` }
   }
 }
