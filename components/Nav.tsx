@@ -40,6 +40,20 @@ function AuthSection() {
     return () => subscription.unsubscribe()
   }, [])
 
+  // When the magic-link callback tab writes the session cookie and signals via
+  // localStorage, pick up the new session here without requiring a page reload.
+  useEffect(() => {
+    const handler = async (e: StorageEvent) => {
+      if (e.key !== 'savoryshelf-auth-success' || !e.newValue) return
+      try { localStorage.removeItem('savoryshelf-auth-success') } catch (_) {}
+      const { data: { session } } = await supabase.auth.getSession()
+      setUser(session?.user ?? null)
+      if (session?.user) setShowAuth(false)
+    }
+    window.addEventListener('storage', handler)
+    return () => window.removeEventListener('storage', handler)
+  }, [])
+
   if (user) return (
     <div className="flex items-center gap-2">
       <span className="text-xs text-muted hidden sm:block max-w-[100px] truncate">{user.email}</span>
