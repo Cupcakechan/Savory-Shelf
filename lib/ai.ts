@@ -101,7 +101,10 @@ percentage of its ingredients are covered by what's available.
 
 Scoring rules:
 - Score = percentage of the recipe's non-trivial ingredients that are covered (integer 0–100).
-- "Non-trivial" means exclude water, salt, black pepper, and generic seasonings that everyone has.
+- The following basics are ALWAYS assumed to be available regardless of what the user listed: \
+salt, water, oil (any type — olive oil, vegetable oil, etc.), pepper (any type — black, white, etc.). \
+Never count these against the match score; treat them as already covered.
+- "Non-trivial" means also exclude generic seasonings that virtually everyone has.
 - Be smart about synonyms: "pasta" covers spaghetti/penne/fusilli/rigatoni; \
 "oil" covers olive oil/vegetable oil/canola oil; "sugar" covers white/brown/caster/icing sugar; \
 "flour" covers plain/all-purpose flour; "butter" covers salted/unsalted; \
