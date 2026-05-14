@@ -35,7 +35,7 @@ export default function MyPantryPage() {
   // Recipe detail view
   const [selected, setSelected] = useState<Recipe | null>(null)
 
-  const scoreTimer = useRef<ReturnType<typeof setTimeout>>()
+  const scoreTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   // ── Auth + initial data load ──────────────────────────
 
