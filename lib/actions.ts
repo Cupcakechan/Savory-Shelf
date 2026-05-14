@@ -4,6 +4,8 @@ import { Recipe } from './types'
 import { supabaseAdmin } from './supabase-admin'
 import { getRateLimitKey, checkRateLimit } from './rate-limit'
 import { secLog } from './sec-log'
+import { createSupabaseServerClient } from './supabase-server'
+import { promises as dns } from 'dns'
 
 // ── SSRF guard ────────────────────────────────────────────
 
@@ -37,9 +39,36 @@ function isSafeUrl(raw: string): boolean {
 }
 
 /**
- * SSRF-safe fetch: validates every URL in the redirect chain and stops
- * after maxRedirects hops. A single AbortSignal covers the entire chain.
+ * Resolves a hostname to its A/AAAA records and checks every resolved IP
+ * against the same private-range rules as isSafeUrl. Prevents DNS-rebinding
+ * attacks where a hostname passes the string check but resolves to an
+ * internal address.
+ *
+ * Returns false (unsafe) if the hostname cannot be resolved or any
+ * resolved IP is in a private/reserved range.
  */
+async function isDnsResolutionSafe(hostname: string): Promise<boolean> {
+  const ips: string[] = []
+  try { ips.push(...await dns.resolve4(hostname)) } catch (_) {}
+  try { ips.push(...await dns.resolve6(hostname)) } catch (_) {}
+
+  if (ips.length === 0) {
+    secLog('warn', { event: 'ssrf_dns_unresolvable', hostname })
+    return false
+  }
+
+  for (const ip of ips) {
+    // Wrap IPv6 in brackets for URL-constructor compatibility
+    const candidate = ip.includes(':') ? `https://[${ip}]/` : `https://${ip}/`
+    if (!isSafeUrl(candidate)) {
+      secLog('warn', { event: 'ssrf_dns_blocked', hostname, resolved_to: ip })
+      return false
+    }
+  }
+  return true
+}
+
+
 async function safeFetch(
   url: string,
   options: Omit<RequestInit, 'redirect'>,
@@ -53,6 +82,13 @@ async function safeFetch(
     if (!isSafeUrl(current)) {
       secLog('warn', { event: 'ssrf_blocked', url: (() => { try { return new URL(current).hostname } catch { return current } })() })
       throw new Error(`Blocked unsafe URL: ${new URL(current).hostname}`)
+    }
+
+    // DNS resolution check — validates the actual IP targets, not just the
+    // hostname string. Catches DNS-rebinding / crafted-domain attacks.
+    const hostname = new URL(current).hostname
+    if (!(await isDnsResolutionSafe(hostname))) {
+      throw new Error(`DNS resolution blocked for: ${hostname}`)
     }
     const res = await fetch(current, { ...options, redirect: 'manual', signal })
     if (res.status >= 300 && res.status < 400) {
@@ -160,8 +196,23 @@ export async function fetchRecipeImage(
   imageUrl: string,
   recipeId: string,
 ): Promise<{ url?: string }> {
-  const key = await getRateLimitKey()
-  if (checkRateLimit(key, 10)) return {}   // silent fail — image is optional
+  // Auth check — service-role operations must only run for authenticated users
+  const serverClient = await createSupabaseServerClient()
+  const { data: { user } } = await serverClient.auth.getUser()
+  if (!user) return {}
+
+  // Ownership check — verify the recipe belongs to the caller before any
+  // privileged storage operation
+  const { data: owned } = await serverClient
+    .from('recipes')
+    .select('id')
+    .eq('id', recipeId)
+    .eq('user_id', user.id)
+    .maybeSingle()
+  if (!owned) return {}
+
+  const key = await getRateLimitKey(user.id)
+  if (await checkRateLimit(key, 10)) return {}   // silent fail — image is optional
   const url = await uploadImageToStorage(imageUrl, imageUrl, recipeId)
   return { url }
 }
@@ -176,6 +227,20 @@ export async function fetchRecipeImage(
 export async function migrateRecipeImage(
   recipeId: string,
 ): Promise<{ url?: string }> {
+  // Auth check — must be an authenticated user
+  const serverClient = await createSupabaseServerClient()
+  const { data: { user } } = await serverClient.auth.getUser()
+  if (!user) return {}
+
+  // Ownership check — verify before reading base64 blob or writing to storage
+  const { data: owned } = await serverClient
+    .from('recipes')
+    .select('id')
+    .eq('id', recipeId)
+    .eq('user_id', user.id)
+    .maybeSingle()
+  if (!owned) return {}
+
   try {
     const { data } = await supabaseAdmin
       .from('recipes')
@@ -391,7 +456,7 @@ export async function importRecipe(
   }
 
   const key = await getRateLimitKey()
-  if (checkRateLimit(key, 10)) {
+  if (await checkRateLimit(key, 10)) {
     return { error: 'Too many import requests — please wait a minute and try again.' }
   }
 

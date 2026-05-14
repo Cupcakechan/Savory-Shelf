@@ -1,13 +1,41 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { randomBytes } from 'crypto'
 
 const PROTECTED = ['/my-recipes', '/my-pantry', '/shopping-list']
 
+// ── Per-request nonce-based CSP ───────────────────────────
+// A fresh nonce is generated for every request. It replaces 'unsafe-inline'
+// in script-src, so only scripts carrying the matching nonce attribute
+// (including Next.js's own inline hydration scripts, which read x-nonce)
+// are allowed to execute. 'strict-dynamic' covers dynamically-loaded chunks.
+
+function buildCsp(nonce: string): string {
+  return [
+    "default-src 'self'",
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://va.vercel-scripts.com`,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: https:",
+    "font-src 'self' https://fonts.gstatic.com",
+    "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://vitals.vercel-insights.com https://va.vercel-scripts.com",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+  ].join('; ')
+}
+
 export async function middleware(request: NextRequest) {
-  // We need a mutable response so we can forward any refreshed session
-  // cookies back to the browser. Always start from NextResponse.next()
-  // and carry the original request through.
-  let response = NextResponse.next({ request })
+  // Generate a fresh nonce for this request
+  const nonce = randomBytes(16).toString('base64')
+  const csp   = buildCsp(nonce)
+
+  // Pass the nonce in request headers so Next.js server components can
+  // read it via headers() and apply it to any inline scripts they render.
+  const requestHeaders = new Headers(request.headers)
+  requestHeaders.set('x-nonce', nonce)
+
+  let response = NextResponse.next({ request: { headers: requestHeaders } })
+  response.headers.set('content-security-policy', csp)
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -16,13 +44,13 @@ export async function middleware(request: NextRequest) {
       cookies: {
         getAll: () => request.cookies.getAll(),
         setAll: (cookiesToSet) => {
-          // Write refreshed cookies into both the forwarded request
-          // (so Server Components see the new values) and the response
-          // (so the browser receives them).
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           )
-          response = NextResponse.next({ request })
+          // Recreate response but always re-apply the nonce headers so
+          // they survive the cookie-refresh path.
+          response = NextResponse.next({ request: { headers: requestHeaders } })
+          response.headers.set('content-security-policy', csp)
           cookiesToSet.forEach(({ name, value, options }) =>
             response.cookies.set(name, value, options)
           )
@@ -31,9 +59,6 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // IMPORTANT: use getUser(), not getSession().
-  // getUser() re-validates the token with the Supabase Auth server and
-  // silently refreshes it if it has expired, keeping the cookie alive.
   const { data: { user } } = await supabase.auth.getUser()
 
   const { pathname } = request.nextUrl
@@ -45,8 +70,6 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Run on every route except Next.js internals and static files so the
-  // session cookie is refreshed on any page the user visits.
   matcher: [
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],

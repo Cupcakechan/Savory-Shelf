@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Lora, DM_Sans } from 'next/font/google'
+import { headers } from 'next/headers'
 import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 import Nav from '@/components/Nav'
@@ -21,17 +22,22 @@ export const metadata: Metadata = {
   description: 'Save and organise recipes from anywhere — by Cocolito Collective.',
 }
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Read the per-request nonce injected by middleware.ts.
+  // Applying it to the theme-init script lets us remove 'unsafe-inline'
+  // from the Content-Security-Policy's script-src directive.
+  const nonce = (await headers()).get('x-nonce') ?? undefined
+
   return (
     <html lang="en" className={`${lora.variable} ${dmSans.variable}`} suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: `
-          (function(){
-            var t=localStorage.getItem('savoryshelf-theme');
-            if(t==='light'){document.documentElement.classList.remove('dark')}
-            else{document.documentElement.classList.add('dark')}
-          })()
-        `}} />
+        {/*
+          Theme initialisation must run synchronously before first paint to
+          prevent a flash of the wrong colour scheme. The external script is
+          served from /public; the nonce allows it under the strict CSP.
+        */}
+        {/* eslint-disable-next-line @next/next/no-sync-scripts */}
+        <script nonce={nonce} src="/theme-init.js" />
       </head>
       <body className="min-h-screen bg-bg font-body antialiased flex flex-col">
         <Nav />

@@ -21,6 +21,13 @@ export default function AuthModal({ onClose }: Props) {
     if (!email.trim()) return
     setLoading(true)
     setError('')
+
+    // Store a login intent marker so the callback page can confirm this
+    // sign-in was initiated from this browser (defense-in-depth on top of PKCE).
+    try {
+      localStorage.setItem('savoryshelf-login-state', String(Date.now()))
+    } catch (_) {}
+
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
       options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
@@ -45,7 +52,7 @@ export default function AuthModal({ onClose }: Props) {
           {/* Close */}
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 p-2 sm:p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+            className="absolute top-4 right-4 p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
           >
             <X size={16} />
           </button>
