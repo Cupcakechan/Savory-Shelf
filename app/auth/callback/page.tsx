@@ -33,8 +33,16 @@ function Callback() {
       localStorage.removeItem('savoryshelf-login-state')
     } catch (_) {}
 
-    supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
-      if (error) {
+    supabase.auth.exchangeCodeForSession(code).then(({ data, error }) => {
+      // Check for an active session rather than the absence of an error.
+      // In React StrictMode (and some PKCE flows) the effect can fire twice —
+      // the second exchange fails with "already used" but the session from the
+      // first exchange is still valid, so the user IS logged in.
+      const hasSession = !!data?.session
+
+      if (!hasSession) {
+        // Only show the error panel if we genuinely have no session.
+        if (error) console.warn('[auth-callback] exchange error:', error.message)
         setStatus('error')
         return
       }
