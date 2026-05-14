@@ -3,6 +3,7 @@
 import { generateText } from 'ai'
 import { createXai } from '@ai-sdk/xai'
 import type { Recipe } from './types'
+import { getRateLimitKey, checkRateLimit } from './rate-limit'
 
 // ── Model ─────────────────────────────────────────────────
 
@@ -149,6 +150,9 @@ export async function translateRecipe(
   recipe: Recipe,
 ): Promise<{ result?: TranslateResult; error?: string }> {
   try {
+    const key = await getRateLimitKey()
+    if (checkRateLimit(key, 8)) return { error: 'Too many requests — please wait a moment and try again.' }
+
     const prompt =
       `Translate this recipe into English.\n\n` +
       `Title: ${recipe.title}\n\n` +
@@ -176,6 +180,9 @@ export async function suggestSubstitutes(
   recipe: Recipe,
 ): Promise<{ result?: SubstitutesResult; error?: string }> {
   try {
+    const key = await getRateLimitKey()
+    if (checkRateLimit(key, 8)) return { error: 'Too many requests — please wait a moment and try again.' }
+
     const prompt =
       `Recipe: "${recipe.title}"\n\n` +
       `Ingredients:\n${recipe.ingredients.join('\n')}\n\n` +
@@ -203,6 +210,9 @@ export async function parseRecipeText(
   text: string,
 ): Promise<{ result?: ParsedRecipeResult; error?: string }> {
   try {
+    const key = await getRateLimitKey()
+    if (checkRateLimit(key, 8)) return { error: 'Too many requests — please wait a moment and try again.' }
+
     const { text: raw } = await generateText({
       model: getModel(),
       system: PARSE_RECIPE_SYSTEM,
@@ -234,6 +244,9 @@ export async function checkPantryMatchBatch(
   }
 
   try {
+    const key = await getRateLimitKey()
+    if (checkRateLimit(key, 8)) return { error: 'Too many requests — please wait a moment and try again.' }
+
     const recipeList = recipes
       .map(r => `- ${r.id} | ${r.ingredients.slice(0, 20).join(', ')}`)
       .join('\n')
@@ -271,6 +284,9 @@ export async function scoreRecipesByPantry(
   }
 
   try {
+    const key = await getRateLimitKey()
+    if (checkRateLimit(key, 8)) return { error: 'Too many requests — please wait a moment and try again.' }
+
     const recipeList = recipes
       .map(r => `- ${r.id} | ${r.ingredients.slice(0, 20).join(', ')}`)
       .join('\n')

@@ -2,6 +2,7 @@
 
 import { Recipe } from './types'
 import { supabaseAdmin } from './supabase-admin'
+import { getRateLimitKey, checkRateLimit } from './rate-limit'
 
 // ── SSRF guard ────────────────────────────────────────────
 
@@ -157,6 +158,8 @@ export async function fetchRecipeImage(
   imageUrl: string,
   recipeId: string,
 ): Promise<{ url?: string }> {
+  const key = await getRateLimitKey()
+  if (checkRateLimit(key, 10)) return {}   // silent fail — image is optional
   const url = await uploadImageToStorage(imageUrl, imageUrl, recipeId)
   return { url }
 }
@@ -382,6 +385,11 @@ export async function importRecipe(
 
   if (!isSafeUrl(target)) {
     return { error: 'Please enter a valid https:// recipe URL from a public website.' }
+  }
+
+  const key = await getRateLimitKey()
+  if (checkRateLimit(key, 10)) {
+    return { error: 'Too many import requests — please wait a minute and try again.' }
   }
 
   try {
