@@ -21,22 +21,37 @@ function Callback() {
       return
     }
 
+    // Defense-in-depth: verify the login was initiated from this browser.
+    // Supabase PKCE is the primary security layer — this is an advisory check.
+    try {
+      const stateTs = localStorage.getItem('savoryshelf-login-state')
+      if (!stateTs) {
+        console.warn('[auth-callback] No login intent marker — cross-device sign-in or unexpected flow')
+      } else if (Date.now() - parseInt(stateTs, 10) > 10 * 60 * 1000) {
+        console.warn('[auth-callback] Login intent marker expired (>10 min)')
+      }
+      localStorage.removeItem('savoryshelf-login-state')
+    } catch (_) {}
+
     supabase.auth.exchangeCodeForSession(code)
       .then(({ error }) => {
         if (!error) {
-          // Notify any other open tab (e.g. the original sign-in tab) so it
-          // picks up the new session instantly via the storage event listener
-          // in Nav.tsx without requiring the user to manually switch tabs.
+          // Signal the original tab to refresh its auth state instantly
           try {
             localStorage.setItem('savoryshelf-auth-success', String(Date.now()))
-          } catch (_) { /* storage unavailable — non-fatal */ }
+          } catch (_) {}
+
+          // Attempt to close this callback tab. Succeeds when the tab was
+          // opened programmatically (e.g. webmail); silently fails for
+          // desktop/mobile email clients — the setTimeout below handles it.
+          window.close()
         }
       })
       .finally(() => {
-        // Always navigate to home whether exchange succeeded or failed.
-        // If it failed the user arrives unsigned-in; if it succeeded they
-        // are fully authenticated.
-        router.replace('/')
+        // Fallback: if window.close() had no effect we are still running,
+        // so navigate home after a short delay. If the tab already closed,
+        // this timer fires into a dead context and is silently ignored.
+        setTimeout(() => router.replace('/'), 300)
       })
   }, [searchParams, router])
 
