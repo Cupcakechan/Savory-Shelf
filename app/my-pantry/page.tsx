@@ -19,12 +19,22 @@ export default function MyPantryPage() {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session?.user) { router.replace('/'); return }
       setUser(session.user)
+
+      // Show cached staples immediately so the skeleton never appears on
+      // repeat visits. The DB fetch still runs to keep data fresh.
+      try {
+        const cached = sessionStorage.getItem('savoryshelf-pantry')
+        if (cached) { setPantry(JSON.parse(cached)); setLoading(false) }
+      } catch {}
+
       const { data } = await supabase
         .from('pantry')
         .select('staples')
         .eq('user_id', session.user.id)
         .maybeSingle()
-      setPantry(data?.staples ?? [])
+      const staples = data?.staples ?? []
+      setPantry(staples)
+      try { sessionStorage.setItem('savoryshelf-pantry', JSON.stringify(staples)) } catch {}
       setLoading(false)
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -33,6 +43,7 @@ export default function MyPantryPage() {
   const persist = async (next: string[]) => {
     if (!user) return
     setPantry(next)
+    try { sessionStorage.setItem('savoryshelf-pantry', JSON.stringify(next)) } catch {}
     // Reset match cache when staples change so Grok re-runs on next My Recipes visit
     await supabase
       .from('pantry')

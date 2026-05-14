@@ -117,7 +117,7 @@ export default function Nav() {
 
             {/* My Pantry — always visible so users can manage staples from anywhere */}
             <Link href="/my-pantry" className={linkCls('/my-pantry')}>
-              <span className="hidden md:inline">My </span>Pantry
+              Pantry
             </Link>
           </nav>
           <div className="w-px h-5 bg-border mx-1" />
