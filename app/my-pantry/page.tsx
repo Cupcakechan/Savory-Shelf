@@ -25,7 +25,8 @@ export default function MyPantryPage() {
   const [input, setInput]   = useState('')
 
   // Saved recipes
-  const [recipes, setRecipes] = useState<Recipe[]>([])
+  const [recipes, setRecipes]       = useState<Recipe[]>([])
+  const [recipesReady, setRecipesReady] = useState(false)
 
   // Matching
   const [scores, setScores]       = useState<Record<string, number>>({})
@@ -50,18 +51,21 @@ export default function MyPantryPage() {
         if (cached) setPantry(JSON.parse(cached))
       } catch {}
 
-      // Load pantry staples + saved recipes in parallel
-      const [pantryRes, recipesRes] = await Promise.all([
-        supabase.from('pantry').select('staples').eq('user_id', session.user.id).maybeSingle(),
-        supabase.from('recipes').select(LIST_COLUMNS).order('created_at', { ascending: false }),
-      ])
+      // Start both fetches simultaneously — they run in parallel.
+      // Await pantry first (single tiny row) so the page can appear
+      // before the potentially-larger recipes list has finished loading.
+      const pantryPromise  = supabase.from('pantry').select('staples').eq('user_id', session.user.id).maybeSingle()
+      const recipesPromise = supabase.from('recipes').select(LIST_COLUMNS).order('created_at', { ascending: false })
 
+      const pantryRes = await pantryPromise
       const staples = pantryRes.data?.staples ?? []
       setPantry(staples)
       try { sessionStorage.setItem('savoryshelf-pantry', JSON.stringify(staples)) } catch {}
+      setLoading(false)   // ← page appears here; recipes may still be in-flight
 
+      const recipesRes = await recipesPromise
       if (recipesRes.data) setRecipes(recipesRes.data.map(fromDbRecipe))
-      setLoading(false)
+      setRecipesReady(true)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -300,7 +304,7 @@ export default function MyPantryPage() {
           )}
 
           {/* No saved recipes at all */}
-          {!scoring && recipes.length === 0 && (
+          {!scoring && recipesReady && recipes.length === 0 && (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <span className="text-4xl mb-4 select-none">📋</span>
               <p className="text-muted text-sm max-w-xs leading-relaxed">
