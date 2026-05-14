@@ -431,7 +431,7 @@ export default function MyRecipesPage() {
         <div className="flex gap-2 overflow-x-auto pb-1 mb-6 -mx-4 px-4 scrollbar-hide">
           <button
             onClick={() => setActiveTag('all')}
-            className={`flex-shrink-0 text-xs font-semibold rounded-full px-3.5 py-1.5 transition-all ${
+            className={`flex-shrink-0 text-xs font-semibold rounded-full px-3.5 py-2 sm:py-1.5 transition-all ${
               activeTag === 'all' ? 'bg-accent text-white' : 'bg-surface border border-border text-muted hover:border-accent/40 hover:text-text'
             }`}
           >

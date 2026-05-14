@@ -82,7 +82,7 @@ function ShareModal({ url, onClose }: { url: string; onClose: () => void }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-bg border border-border rounded-2xl p-8 max-w-sm w-full shadow-2xl">
-        <button onClick={onClose} className="absolute top-4 right-4 p-1.5 rounded-lg text-muted hover:text-text hover:bg-surface transition-colors"><X size={16} /></button>
+        <button onClick={onClose} className="absolute top-4 right-4 p-2 sm:p-1.5 rounded-lg text-muted hover:text-text hover:bg-surface transition-colors"><X size={16} /></button>
         <div className="w-12 h-12 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center mb-5">
           <Share2 size={20} className="text-accent" />
         </div>
@@ -119,7 +119,7 @@ function AiErrorModal({ message, onClose }: { message: string; onClose: () => vo
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-bg border border-border rounded-2xl p-8 max-w-sm w-full shadow-2xl text-center">
-        <button onClick={onClose} className="absolute top-4 right-4 p-1.5 rounded-lg text-muted hover:text-text hover:bg-surface transition-colors"><X size={16} /></button>
+        <button onClick={onClose} className="absolute top-4 right-4 p-2 sm:p-1.5 rounded-lg text-muted hover:text-text hover:bg-surface transition-colors"><X size={16} /></button>
         <div className="text-4xl mb-4 select-none">⚠️</div>
         <h3 className="font-display text-lg font-bold text-text mb-2">Something went wrong</h3>
         <p className="text-sm text-muted leading-relaxed mb-6">{message}</p>
@@ -145,7 +145,7 @@ function TranslateModal({
             <Languages size={17} className="text-accent" />
             <h3 className="font-display text-lg font-bold text-text">Translated Recipe</h3>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-muted hover:text-text hover:bg-surface transition-colors"><X size={16} /></button>
+          <button onClick={onClose} className="p-2 sm:p-1.5 rounded-lg text-muted hover:text-text hover:bg-surface transition-colors"><X size={16} /></button>
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
           <h4 className="font-display text-xl font-bold text-text leading-snug">{result.title}</h4>
@@ -198,7 +198,7 @@ function SubstitutesModal({
             <Sparkles size={17} className="text-accent" />
             <h3 className="font-display text-lg font-bold text-text">Ingredient Substitutes</h3>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-muted hover:text-text hover:bg-surface transition-colors"><X size={16} /></button>
+          <button onClick={onClose} className="p-2 sm:p-1.5 rounded-lg text-muted hover:text-text hover:bg-surface transition-colors"><X size={16} /></button>
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
           {result.substitutes.length === 0 ? (
@@ -478,7 +478,7 @@ export default function RecipeView({
     <>
       <article className="pb-20">
         {onBack && (
-          <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-muted hover:text-text transition-colors mt-6 mb-2">
+          <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-muted hover:text-text transition-colors mt-6 mb-2 py-2 -mx-1 px-1">
             <ChevronLeft size={16} />Back
           </button>
         )}
@@ -494,16 +494,16 @@ export default function RecipeView({
           <h1 className="font-display text-3xl md:text-4xl font-bold text-text leading-tight flex-1">{cleanTitle(recipe.title)}</h1>
           {!readOnly && (
             <div className="flex items-center gap-2 mt-1 flex-shrink-0">
-              <button onClick={() => setShowNotes(true)} title="My Kitchen Notes" className="p-2.5 rounded-xl border border-border text-muted hover:border-accent/40 hover:text-accent transition-all">
+              <button onClick={() => setShowNotes(true)} title="My Kitchen Notes" className="p-3 sm:p-2.5 rounded-xl border border-border text-muted hover:border-accent/40 hover:text-accent transition-all">
                 <NotebookPen size={16} />
               </button>
-              <button onClick={handleShare} title="Share recipe" className="p-2.5 rounded-xl border border-border text-muted hover:border-accent/40 hover:text-accent transition-all">
+              <button onClick={handleShare} title="Share recipe" className="p-3 sm:p-2.5 rounded-xl border border-border text-muted hover:border-accent/40 hover:text-accent transition-all">
                 <Share2 size={16} />
               </button>
               <button
                 onClick={toggleSave}
                 title={saved ? 'Remove from My Recipes' : 'Save to My Recipes'}
-                className={`p-2.5 rounded-xl border transition-all ${saved ? 'bg-accent border-accent text-white' : 'border-border text-muted hover:border-accent hover:text-accent'}`}
+                className={`p-3 sm:p-2.5 rounded-xl border transition-all ${saved ? 'bg-accent border-accent text-white' : 'border-border text-muted hover:border-accent hover:text-accent'}`}
               >
                 {saved ? <BookmarkCheck size={16} /> : <Bookmark size={16} />}
               </button>
@@ -618,7 +618,7 @@ export default function RecipeView({
         <Section title="Ingredients">
           <ul className="space-y-1">
             {recipe.ingredients.map((ing, i) => (
-              <li key={i} onClick={() => toggleCheck(i)} className={`flex items-start gap-3 px-3 py-2.5 rounded-xl cursor-pointer select-none transition-all ${checked.has(i) ? 'opacity-40' : 'hover:bg-surface active:scale-[.99]'}`}>
+              <li key={i} onClick={() => toggleCheck(i)} className={`flex items-start gap-3 px-3 py-3 sm:py-2.5 rounded-xl cursor-pointer select-none transition-all ${checked.has(i) ? 'opacity-40' : 'hover:bg-surface active:scale-[.99]'}`}>
                 <span className={`mt-0.5 w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-colors ${checked.has(i) ? 'bg-accent border-accent' : 'border-border'}`}>
                   {checked.has(i) && <Check size={10} className="text-white" strokeWidth={3.5} />}
                 </span>

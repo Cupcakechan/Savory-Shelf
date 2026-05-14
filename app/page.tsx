@@ -351,7 +351,7 @@ export default function ImportPage() {
       </p>
       <button
         onClick={() => setShowManual(true)}
-        className="mt-2 text-xs text-muted hover:text-text transition-colors underline underline-offset-2"
+        className="mt-1 py-3 px-2 text-xs text-muted hover:text-text transition-colors underline underline-offset-2"
       >
         or paste a recipe manually
       </button>

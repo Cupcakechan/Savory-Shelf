@@ -96,6 +96,31 @@ input[type='range']::-moz-range-thumb {
   outline-offset: 2px;
 }
 
+/* ── Mobile & touch optimisations ────────────────────────── */
+
+/* Remove the blue tap-highlight flash on iOS Safari */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Eliminate the 300 ms double-tap delay on buttons and links */
+button,
+a,
+label,
+[role="button"] {
+  touch-action: manipulation;
+}
+
+/* Prevent iOS Safari from zooming the page when an input is focused.
+   Safari zooms if the input font-size is < 16 px — Tailwind's text-sm
+   is 14 px. Only override on narrow viewports; desktop stays at 14 px. */
+@media (max-width: 639px) {
+  input,
+  textarea,
+  select {
+    font-size: 1rem; /* 16 px */
+  }
+}
 /* ── Base ─────────────────────────────────────────────────── */
 html {
   background-color: var(--color-bg);

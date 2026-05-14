@@ -81,7 +81,7 @@ export default function RecipeCard({ recipe, onClick, onDelete, pantryMatch }: P
           if (confirm(`Delete "${recipe.title}"?`)) onDelete(recipe.id)
         }}
         title="Delete recipe"
-        className="absolute top-2 right-2 p-1.5 rounded-lg bg-bg/80 backdrop-blur-sm border border-border text-muted hover:text-highlight hover:border-highlight/40 opacity-0 group-hover:opacity-100 transition-all"
+        className="absolute top-2 right-2 p-2 rounded-lg bg-bg/80 backdrop-blur-sm border border-border text-muted hover:text-highlight hover:border-highlight/40 opacity-40 sm:opacity-0 group-hover:opacity-100 transition-all"
       >
         <Trash2 size={13} />
       </button>

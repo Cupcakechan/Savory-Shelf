@@ -51,10 +51,10 @@ export default function EditModal({ recipe, onClose, onSave, userId }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full sm:max-w-lg bg-bg border border-border rounded-t-2xl sm:rounded-2xl p-6 max-h-[92vh] overflow-y-auto shadow-2xl">
+      <div className="relative w-full sm:max-w-lg bg-bg border border-border rounded-t-2xl sm:rounded-2xl p-6 max-h-[92vh] overflow-y-auto overscroll-contain shadow-2xl">
         <div className="flex items-center justify-between mb-6">
           <h2 className="font-display text-xl font-bold text-text">Edit Recipe</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-muted hover:text-text hover:bg-surface transition-colors">
+          <button onClick={onClose} className="p-2 sm:p-1.5 rounded-lg text-muted hover:text-text hover:bg-surface transition-colors">
             <X size={18} />
           </button>
         </div>

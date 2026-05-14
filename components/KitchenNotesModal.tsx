@@ -33,7 +33,7 @@ export default function KitchenNotesModal({ recipe, userId, isSaved, onClose, on
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full sm:max-w-lg bg-bg border border-border rounded-t-2xl sm:rounded-2xl p-6 max-h-[92vh] overflow-y-auto shadow-2xl">
+      <div className="relative w-full sm:max-w-lg bg-bg border border-border rounded-t-2xl sm:rounded-2xl p-6 max-h-[92vh] overflow-y-auto overscroll-contain shadow-2xl">
 
         {/* Header */}
         <div className="flex items-center justify-between mb-5">
@@ -41,7 +41,7 @@ export default function KitchenNotesModal({ recipe, userId, isSaved, onClose, on
             <NotebookPen size={17} className="text-accent" />
             <h2 className="font-display text-lg font-bold text-text">My Kitchen Notes</h2>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-muted hover:text-text hover:bg-surface transition-colors">
+          <button onClick={onClose} className="p-2 sm:p-1.5 rounded-lg text-muted hover:text-text hover:bg-surface transition-colors">
             <X size={18} />
           </button>
         </div>

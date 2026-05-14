@@ -65,7 +65,7 @@ export default function MyPantryPage() {
       {/* Back */}
       <button
         onClick={() => router.push('/my-recipes')}
-        className="flex items-center gap-1.5 text-sm text-muted hover:text-text transition-colors mb-8"
+        className="flex items-center gap-1.5 text-sm text-muted hover:text-text transition-colors mb-8 py-2 -mx-1 px-1"
       >
         <ChevronLeft size={15} />
         Back to My Recipes

@@ -20,7 +20,7 @@ function ThemeToggle() {
     localStorage.setItem('savoryshelf-theme', next ? 'dark' : 'light')
   }
   return (
-    <button onClick={toggle} title={dark ? 'Switch to light mode' : 'Switch to dark mode'} className="p-2 rounded-lg text-muted hover:text-text hover:bg-surface transition-colors">
+    <button onClick={toggle} title={dark ? 'Switch to light mode' : 'Switch to dark mode'} className="p-2.5 sm:p-2 rounded-lg text-muted hover:text-text hover:bg-surface transition-colors">
       {dark ? <Sun size={17} /> : <Moon size={17} />}
     </button>
   )
@@ -45,7 +45,7 @@ function AuthSection() {
       <span className="text-xs text-muted hidden sm:block max-w-[100px] truncate">{user.email}</span>
       <button
         onClick={() => supabase.auth.signOut()}
-        className="text-xs font-medium text-muted hover:text-text border border-border hover:border-accent/40 px-2.5 py-1.5 rounded-lg transition-colors"
+        className="text-xs font-medium text-muted hover:text-text border border-border hover:border-accent/40 px-2.5 py-2 sm:py-1.5 rounded-lg transition-colors"
       >
         Sign out
       </button>
@@ -56,7 +56,7 @@ function AuthSection() {
     <>
       <button
         onClick={() => setShowAuth(true)}
-        className="text-xs font-semibold bg-accent text-white px-3 py-1.5 rounded-lg hover:bg-accent/90 transition-colors"
+        className="text-xs font-semibold bg-accent text-white px-3 py-2 sm:py-1.5 rounded-lg hover:bg-accent/90 transition-colors"
       >
         Sign in
       </button>
@@ -72,7 +72,7 @@ export default function Nav() {
   const router = useRouter()
 
   const linkCls = (href: string) =>
-    `text-sm font-medium px-3 py-1.5 rounded-lg transition-colors ` +
+    `text-sm font-medium px-3 py-2 sm:py-1.5 rounded-lg transition-colors ` +
     (path === href ? 'bg-surface text-text' : 'text-muted hover:text-text hover:bg-surface/60')
 
   return (
