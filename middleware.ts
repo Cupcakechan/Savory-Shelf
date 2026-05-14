@@ -1,6 +1,13 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
-import { randomBytes } from 'crypto'
+
+// crypto.getRandomValues is available in the Edge runtime (Web Crypto API).
+// Node's randomBytes cannot be used here — middleware runs on the Edge.
+function generateNonce(): string {
+  const bytes = new Uint8Array(16)
+  crypto.getRandomValues(bytes)
+  return btoa(String.fromCharCode(...bytes))
+}
 
 const PROTECTED = ['/my-recipes', '/my-pantry', '/shopping-list']
 
@@ -26,7 +33,7 @@ function buildCsp(nonce: string): string {
 
 export async function middleware(request: NextRequest) {
   // Generate a fresh nonce for this request
-  const nonce = randomBytes(16).toString('base64')
+  const nonce = generateNonce()
   const csp   = buildCsp(nonce)
 
   // Pass the nonce in request headers so Next.js server components can
