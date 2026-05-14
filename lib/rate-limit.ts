@@ -1,4 +1,5 @@
 import { headers } from 'next/headers'
+import { secLog } from './sec-log'
 
 /**
  * Minimal in-memory rate limiter for Server Actions.
@@ -33,7 +34,10 @@ export function checkRateLimit(
     store.set(key, { count: 1, reset: now + windowMs })
     return false   // under limit
   }
-  if (entry.count >= max) return true  // over limit
+  if (entry.count >= max) {
+    secLog('warn', { event: 'rate_limit_triggered', key, max, window_ms: windowMs })
+    return true  // over limit
+  }
   entry.count++
   return false
 }

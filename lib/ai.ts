@@ -4,6 +4,7 @@ import { generateText } from 'ai'
 import { createXai } from '@ai-sdk/xai'
 import type { Recipe } from './types'
 import { getRateLimitKey, checkRateLimit } from './rate-limit'
+import { secLog } from './sec-log'
 
 // ── Model ─────────────────────────────────────────────────
 
@@ -167,7 +168,7 @@ export async function translateRecipe(
 
     return { result: parseJson<TranslateResult>(text) }
   } catch (err) {
-    console.error('[translateRecipe] error:', err)
+    secLog('error', { event: 'ai_failure', fn: 'translateRecipe', error: err instanceof Error ? err.message : String(err) })
     const msg = err instanceof Error ? err.message : String(err)
     if (msg.includes('XAI_API_KEY')) return { error: msg }
     return {
@@ -196,7 +197,7 @@ export async function suggestSubstitutes(
 
     return { result: parseJson<SubstitutesResult>(text) }
   } catch (err) {
-    console.error('[suggestSubstitutes] error:', err)
+    secLog('error', { event: 'ai_failure', fn: 'suggestSubstitutes', error: err instanceof Error ? err.message : String(err) })
     const msg = err instanceof Error ? err.message : String(err)
     if (msg.includes('XAI_API_KEY')) return { error: msg }
     return {
@@ -221,7 +222,7 @@ export async function parseRecipeText(
 
     return { result: parseJson<ParsedRecipeResult>(raw) }
   } catch (err) {
-    console.error('[parseRecipeText] error:', err)
+    secLog('error', { event: 'ai_failure', fn: 'parseRecipeText', error: err instanceof Error ? err.message : String(err) })
     const msg = err instanceof Error ? err.message : String(err)
     if (msg.includes('XAI_API_KEY')) return { error: msg }
     return {
@@ -263,7 +264,7 @@ export async function checkPantryMatchBatch(
 
     return { result: parseJson<Record<string, boolean>>(text) }
   } catch (err) {
-    console.error('[checkPantryMatchBatch] error:', err)
+    secLog('error', { event: 'ai_failure', fn: 'checkPantryMatchBatch', error: err instanceof Error ? err.message : String(err) })
     const msg = err instanceof Error ? err.message : String(err)
     if (msg.includes('XAI_API_KEY')) return { error: msg }
     return { error: 'Pantry check failed — please try again later.' }
@@ -311,7 +312,7 @@ export async function scoreRecipesByPantry(
     )
     return { result }
   } catch (err) {
-    console.error('[scoreRecipesByPantry] error:', err)
+    secLog('error', { event: 'ai_failure', fn: 'scoreRecipesByPantry', error: err instanceof Error ? err.message : String(err) })
     const msg = err instanceof Error ? err.message : String(err)
     if (msg.includes('XAI_API_KEY')) return { error: msg }
     return { error: 'Pantry scoring failed — please try again later.' }

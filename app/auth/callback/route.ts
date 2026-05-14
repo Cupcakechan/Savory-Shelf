@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
+import { secLog } from '@/lib/sec-log'
 
 /**
  * Handles the Supabase magic-link PKCE callback.
@@ -15,7 +16,12 @@ export async function GET(request: Request) {
   // Validate `next` to prevent open-redirect attacks.
   // Only accept relative paths that start with exactly one `/` (not `//evil.com`).
   const rawNext = searchParams.get('next') ?? '/'
-  const next = rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : '/'
+  const isSafeNext = rawNext.startsWith('/') && !rawNext.startsWith('//')
+  if (!isSafeNext && rawNext !== '/') {
+    secLog('warn', { event: 'invalid_redirect_target', raw_next: rawNext })
+  }
+  // Only accept relative paths that start with exactly one `/` (not `//evil.com`).
+  const next = isSafeNext ? rawNext : '/'
 
   if (code) {
     const supabase = await createSupabaseServerClient()

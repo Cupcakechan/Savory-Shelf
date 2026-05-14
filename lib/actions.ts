@@ -3,6 +3,7 @@
 import { Recipe } from './types'
 import { supabaseAdmin } from './supabase-admin'
 import { getRateLimitKey, checkRateLimit } from './rate-limit'
+import { secLog } from './sec-log'
 
 // ── SSRF guard ────────────────────────────────────────────
 
@@ -50,6 +51,7 @@ async function safeFetch(
 
   for (let hop = 0; hop <= maxRedirects; hop++) {
     if (!isSafeUrl(current)) {
+      secLog('warn', { event: 'ssrf_blocked', url: (() => { try { return new URL(current).hostname } catch { return current } })() })
       throw new Error(`Blocked unsafe URL: ${new URL(current).hostname}`)
     }
     const res = await fetch(current, { ...options, redirect: 'manual', signal })
@@ -384,6 +386,7 @@ export async function importRecipe(
     : url.trim()
 
   if (!isSafeUrl(target)) {
+    secLog('warn', { event: 'invalid_import_url', url: target })
     return { error: 'Please enter a valid https:// recipe URL from a public website.' }
   }
 
@@ -423,17 +426,20 @@ export async function importRecipe(
     // Reject non-HTML responses (PDFs, images, APIs, etc.)
     const ct = res.headers.get('content-type') ?? ''
     if (!ct.includes('text/html') && !ct.includes('application/xhtml+xml')) {
+      secLog('warn', { event: 'import_non_html', url: target, content_type: ct })
       return { error: 'That URL doesn\'t appear to be a recipe page. Try another URL.' }
     }
 
     // Guard against oversized pages before reading the body
     const cl = parseInt(res.headers.get('content-length') ?? '0')
     if (cl > MAX_HTML_BYTES) {
+      secLog('warn', { event: 'import_oversized_header', url: target, bytes: cl })
       return { error: 'That page is too large to import. Try another URL.' }
     }
 
     const html = await res.text()
     if (html.length > MAX_HTML_BYTES) {
+      secLog('warn', { event: 'import_oversized_body', url: target, bytes: html.length })
       return { error: 'That page is too large to import. Try another URL.' }
     }
 
@@ -452,7 +458,11 @@ export async function importRecipe(
       return { error: 'That URL points to a restricted address and cannot be imported.' }
     }
     if (msg.includes('Too many redirects')) {
+      secLog('warn', { event: 'import_too_many_redirects', url: target })
       return { error: 'That URL redirects too many times. Try the final destination URL directly.' }
+    }
+    if (err instanceof Error && err.name === 'TimeoutError') {
+      secLog('warn', { event: 'import_timeout', url: target })
     }
     return { error: `Could not fetch the page: ${msg}` }
   }
