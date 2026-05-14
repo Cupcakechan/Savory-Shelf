@@ -1,16 +1,12 @@
-import { createClient } from '@supabase/supabase-js'
+import { createBrowserClient } from '@supabase/ssr'
 import type { Recipe } from './types'
 
-export const supabase = createClient(
+// createBrowserClient (from @supabase/ssr) stores the session in cookies
+// instead of localStorage, making it readable by the middleware and server
+// components. All existing method calls (from(), auth, etc.) are identical.
+export const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  {
-    auth: {
-      autoRefreshToken:   true,
-      persistSession:     true,
-      detectSessionInUrl: true,
-    },
-  },
 )
 
 // ── DB ↔ app type mappers ──────────────────────────────────
