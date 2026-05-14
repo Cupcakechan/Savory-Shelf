@@ -36,14 +36,22 @@ function Callback() {
     supabase.auth.exchangeCodeForSession(code)
       .then(({ error }) => {
         if (!error) {
-          // Signal any other open tab so it picks up the new session instantly
+          // Signal the original tab to refresh its auth state instantly
           try {
             localStorage.setItem('savoryshelf-auth-success', String(Date.now()))
-          } catch (_) { /* storage unavailable — non-fatal */ }
+          } catch (_) {}
+
+          // Attempt to close this callback tab. Succeeds when the tab was
+          // opened programmatically (e.g. webmail); silently fails for
+          // desktop/mobile email clients — the setTimeout below handles it.
+          window.close()
         }
       })
       .finally(() => {
-        router.replace('/')
+        // Fallback: if window.close() had no effect we are still running,
+        // so navigate home after a short delay. If the tab already closed,
+        // this timer fires into a dead context and is silently ignored.
+        setTimeout(() => router.replace('/'), 300)
       })
   }, [searchParams, router])
 

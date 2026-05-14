@@ -31,6 +31,7 @@ function ThemeToggle() {
 function AuthSection() {
   const [user, setUser] = useState<User | null>(null)
   const [showAuth, setShowAuth] = useState(false)
+  const router = useRouter()
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setUser(session?.user ?? null))
@@ -40,19 +41,23 @@ function AuthSection() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // When the magic-link callback tab writes the session cookie and signals via
-  // localStorage, pick up the new session here without requiring a page reload.
+  // When the magic-link callback tab signals via localStorage, pick up the
+  // new session, close the auth modal, and navigate to the main app so the
+  // user lands somewhere useful without any manual interaction.
   useEffect(() => {
     const handler = async (e: StorageEvent) => {
       if (e.key !== 'savoryshelf-auth-success' || !e.newValue) return
       try { localStorage.removeItem('savoryshelf-auth-success') } catch (_) {}
       const { data: { session } } = await supabase.auth.getSession()
       setUser(session?.user ?? null)
-      if (session?.user) setShowAuth(false)
+      if (session?.user) {
+        setShowAuth(false)
+        router.push('/my-recipes')
+      }
     }
     window.addEventListener('storage', handler)
     return () => window.removeEventListener('storage', handler)
-  }, [])
+  }, [router])
 
   if (user) return (
     <div className="flex items-center gap-2">
