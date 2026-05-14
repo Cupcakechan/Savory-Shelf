@@ -1,11 +1,10 @@
-import { Clock, Trash2, Leaf } from 'lucide-react'
+import { Clock, Trash2 } from 'lucide-react'
 import { Recipe } from '@/lib/types'
 
 interface Props {
   recipe: Recipe
   onClick: () => void
   onDelete: (id: string) => void
-  pantryMatch?: boolean
   matchPercent?: number   // 0-100 — shows a coloured % badge (pantry page)
   showTags?: boolean      // show collection tag chips below title (pantry page)
 }
@@ -25,7 +24,7 @@ function ingredientCount(recipe: Recipe): string {
   return n === 1 ? '(1 ingredient)' : `(${n} ingredients)`
 }
 
-export default function RecipeCard({ recipe, onClick, onDelete, pantryMatch, matchPercent, showTags }: Props) {
+export default function RecipeCard({ recipe, onClick, onDelete, matchPercent, showTags }: Props) {
   const count = ingredientCount(recipe)
 
   return (
@@ -45,16 +44,6 @@ export default function RecipeCard({ recipe, onClick, onDelete, pantryMatch, mat
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-4xl select-none">🍽️</div>
-          )}
-
-          {/* Pantry Friendly badge (My Recipes page) */}
-          {pantryMatch && (
-            <div className="absolute bottom-2 left-2">
-              <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-emerald-500 text-white rounded-full px-2 py-0.5 shadow-sm leading-snug">
-                <Leaf size={9} strokeWidth={2.5} />
-                Pantry Friendly
-              </span>
-            </div>
           )}
 
           {/* Match % badge (pantry matching page) */}

@@ -18,108 +18,10 @@ interface PantryCache {
   results: Record<string, boolean>
 }
 
-const MAX_PANTRY = 10
-
 // image_url is a short string (~100 chars) — fine to include in list queries.
 // image_base64 is excluded (can be 200-500 KB per recipe).
 const LIST_COLUMNS =
   'id, title, image_url, prep_time, cook_time, servings, ingredients, instructions, notes, source_url, created_at, tags'
-
-// ── Pantry Modal ──────────────────────────────────────────
-
-function PantryModal({
-  pantry,
-  onUpdate,
-  onClose,
-}: {
-  pantry: string[]
-  onUpdate: (staples: string[]) => Promise<void>
-  onClose: () => void
-}) {
-  const [items, setItems] = useState([...pantry])
-  const [input, setInput] = useState('')
-  const [busy, setBusy]   = useState(false)
-
-  const persist = async (next: string[]) => {
-    setItems(next)
-    setBusy(true)
-    await onUpdate(next)
-    setBusy(false)
-  }
-
-  const add = () => {
-    const val = input.trim().toLowerCase()
-    if (!val || items.includes(val) || items.length >= MAX_PANTRY) return
-    persist([...items, val])
-    setInput('')
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-bg border border-border rounded-2xl p-6 w-full max-w-sm shadow-2xl">
-        <div className="flex items-center justify-between mb-1">
-          <div className="flex items-center gap-2">
-            <span className="text-xl select-none">🥬</span>
-            <h2 className="font-display text-lg font-bold text-text">My Pantry</h2>
-          </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-muted hover:text-text hover:bg-surface transition-colors">
-            <X size={16} />
-          </button>
-        </div>
-        <p className="text-xs text-muted mb-5 leading-relaxed">
-          Staples you always have on hand. Grok checks recipes against these for Pantry Friendly badges.
-        </p>
-
-        <div className="flex flex-wrap gap-2 mb-5 min-h-[2rem]">
-          {items.length === 0 ? (
-            <p className="text-xs text-subtle italic">No staples yet — add some below.</p>
-          ) : (
-            items.map(item => (
-              <span key={item} className="inline-flex items-center gap-1 text-xs font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 rounded-full pl-3 pr-2 py-1.5 capitalize">
-                {item}
-                <button onClick={() => persist(items.filter(i => i !== item))} aria-label={`Remove ${item}`} className="ml-0.5 rounded-full p-0.5 hover:bg-emerald-500/20 transition-colors">
-                  <X size={11} />
-                </button>
-              </span>
-            ))
-          )}
-        </div>
-
-        {items.length < MAX_PANTRY ? (
-          <div className="flex gap-2 mb-4">
-            <input
-              type="text"
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') add() }}
-              placeholder="e.g. olive oil, butter…"
-              className="flex-1 bg-surface border border-border rounded-xl px-3.5 py-2.5 text-sm text-text placeholder:text-subtle outline-none focus:border-accent/50 transition-colors"
-              autoFocus
-            />
-            <button onClick={add} disabled={!input.trim() || busy} className="flex-shrink-0 bg-accent hover:bg-accent/90 disabled:opacity-40 text-white text-sm font-semibold rounded-xl px-4 py-2.5 transition-all active:scale-[.97]">
-              Add
-            </button>
-          </div>
-        ) : (
-          <p className="text-xs text-muted text-center mb-4">Maximum {MAX_PANTRY} staples reached.</p>
-        )}
-
-        {items.length > 0 && (
-          <button onClick={() => persist([])} className="w-full text-xs text-muted hover:text-highlight transition-colors py-2 rounded-lg hover:bg-surface">
-            Clear all staples
-          </button>
-        )}
-
-        <div className="border-t border-border mt-3 pt-3 text-center">
-          <Link href="/my-pantry" onClick={onClose} className="text-xs text-accent hover:underline transition-colors">
-            Manage full pantry →
-          </Link>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 // ── Skeleton ──────────────────────────────────────────────
 
@@ -158,7 +60,6 @@ export default function MyRecipesPage() {
   const [pantry, setPantry]               = useState<string[]>([])
   const [pantryCache, setPantryCache]     = useState<PantryCache | null>(null)
   const [pantryMatches, setPantryMatches] = useState<Record<string, boolean>>({})
-  const [showPantry, setShowPantry]       = useState(false)
 
   // Clear the selected recipe when the user clicks "My Recipes" in the nav
   // while already on this route (router.push would be a no-op in that case).
@@ -412,19 +313,6 @@ export default function MyRecipesPage() {
             </button>
           )}
         </div>
-
-        <button
-          onClick={() => setShowPantry(true)}
-          title="My Pantry"
-          className={`flex-shrink-0 flex items-center gap-1.5 rounded-xl px-3.5 py-3 text-sm font-medium border transition-all active:scale-[.97] ${
-            pantry.length > 0
-              ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/15'
-              : 'bg-surface border-border text-muted hover:border-accent/40 hover:text-text'
-          }`}
-        >
-          <span className="text-base leading-none select-none">🥬</span>
-          {pantry.length > 0 && <span className="text-xs font-bold tabular-nums">{pantry.length}</span>}
-        </button>
       </div>
 
       {allTags.length > 0 && (
@@ -475,15 +363,11 @@ export default function MyRecipesPage() {
               recipe={r}
               onClick={() => setSelected(r)}
               onDelete={handleDelete}
-              pantryMatch={pantryMatches[r.id] ?? false}
             />
           ))}
         </div>
       )}
 
-      {showPantry && (
-        <PantryModal pantry={pantry} onUpdate={savePantry} onClose={() => setShowPantry(false)} />
-      )}
     </div>
   )
 }
