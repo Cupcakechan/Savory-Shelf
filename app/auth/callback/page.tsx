@@ -33,16 +33,23 @@ function Callback() {
       localStorage.removeItem('savoryshelf-login-state')
     } catch (_) {}
 
-    supabase.auth.exchangeCodeForSession(code).then(({ data, error }) => {
-      // Check for an active session rather than the absence of an error.
-      // In React StrictMode (and some PKCE flows) the effect can fire twice —
-      // the second exchange fails with "already used" but the session from the
-      // first exchange is still valid, so the user IS logged in.
-      const hasSession = !!data?.session
+    async function handleExchange() {
+      // Attempt the PKCE code exchange.
+      // We do NOT rely on its return value because in Next.js App Router the
+      // middleware calls supabase.auth.getUser() on every request, which can
+      // consume the PKCE code server-side before this client component runs.
+      // That makes exchangeCodeForSession appear to "fail" (code already used)
+      // even though the session cookie was set correctly by the middleware.
+      // getSession() below is always the source of truth.
+      try {
+        await supabase.auth.exchangeCodeForSession(code!)
+      } catch (_) {
+        // Intentionally swallowed — getSession() decides success/failure
+      }
 
-      if (!hasSession) {
-        // Only show the error panel if we genuinely have no session.
-        if (error) console.warn('[auth-callback] exchange error:', error.message)
+      const { data: { session } } = await supabase.auth.getSession()
+
+      if (!session) {
         setStatus('error')
         return
       }
@@ -58,10 +65,11 @@ function Callback() {
       window.close()
 
       // Give the browser ~600 ms to act on window.close().
-      // If we're still running after that, the tab is stuck open —
-      // show the success panel so the user always has a clear next step.
+      // If we're still running after that, show the success panel.
       setTimeout(() => setStatus('success'), 600)
-    })
+    }
+
+    handleExchange()
   }, [searchParams, router])
 
   // ── Loading spinner ───────────────────────────────────
