@@ -95,6 +95,23 @@ should be counted as covered even if not explicitly in the pantry
 Return ONLY a valid JSON object mapping each recipe ID to a boolean — no markdown, no code fences:
 {"recipeId1": true, "recipeId2": false}`
 
+const PANTRY_SCORE_SYSTEM = `\
+You are a culinary expert. Given a list of available ingredients, score each recipe by what \
+percentage of its ingredients are covered by what's available.
+
+Scoring rules:
+- Score = percentage of the recipe's non-trivial ingredients that are covered (integer 0–100).
+- "Non-trivial" means exclude water, salt, black pepper, and generic seasonings that everyone has.
+- Be smart about synonyms: "pasta" covers spaghetti/penne/fusilli/rigatoni; \
+"oil" covers olive oil/vegetable oil/canola oil; "sugar" covers white/brown/caster/icing sugar; \
+"flour" covers plain/all-purpose flour; "butter" covers salted/unsalted; \
+"milk" covers whole/semi/skimmed; "stock" covers broth; "chicken" covers chicken breast/thigh; etc.
+- Partial coverage counts: "chicken breast" in pantry covers a recipe calling for "diced chicken".
+- Round to the nearest integer.
+
+Return ONLY a valid JSON object mapping each recipe ID to its integer score (0–100) — no markdown, no code fences:
+{"recipeId1": 85, "recipeId2": 42, "recipeId3": 100}`
+
 // ── Exported types ────────────────────────────────────────
 
 export interface TranslateResult {
@@ -234,5 +251,50 @@ export async function checkPantryMatchBatch(
     const msg = err instanceof Error ? err.message : String(err)
     if (msg.includes('XAI_API_KEY')) return { error: msg }
     return { error: 'Pantry check failed — please try again later.' }
+  }
+}
+
+/**
+ * Score each recipe 0–100 based on how many of its ingredients the user
+ * currently has. Used by the "What I Have" pantry matching page.
+ * Returns a map of { recipeId: score } where score is an integer 0–100.
+ */
+export async function scoreRecipesByPantry(
+  recipes: Array<{ id: string; ingredients: string[] }>,
+  pantry: string[],
+): Promise<{ result?: Record<string, number>; error?: string }> {
+  if (recipes.length === 0 || pantry.length === 0) {
+    return { result: Object.fromEntries(recipes.map(r => [r.id, 0])) }
+  }
+
+  try {
+    const recipeList = recipes
+      .map(r => `- ${r.id} | ${r.ingredients.slice(0, 20).join(', ')}`)
+      .join('\n')
+
+    const prompt =
+      `Available ingredients: ${pantry.join(', ')}\n\n` +
+      `Recipes (format: "- id | ingredients"):\n${recipeList}`
+
+    const { text } = await generateText({
+      model: getModel(),
+      system: PANTRY_SCORE_SYSTEM,
+      prompt,
+    })
+
+    const raw = parseJson<Record<string, number>>(text)
+    // Clamp all values to 0–100 integers in case the model drifts
+    const result = Object.fromEntries(
+      Object.entries(raw).map(([id, score]) => [
+        id,
+        Math.max(0, Math.min(100, Math.round(Number(score) || 0))),
+      ])
+    )
+    return { result }
+  } catch (err) {
+    console.error('[scoreRecipesByPantry] error:', err)
+    const msg = err instanceof Error ? err.message : String(err)
+    if (msg.includes('XAI_API_KEY')) return { error: msg }
+    return { error: 'Pantry scoring failed — please try again later.' }
   }
 }

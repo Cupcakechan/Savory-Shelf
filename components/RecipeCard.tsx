@@ -6,6 +6,8 @@ interface Props {
   onClick: () => void
   onDelete: (id: string) => void
   pantryMatch?: boolean
+  matchPercent?: number   // 0-100 — shows a coloured % badge (pantry page)
+  showTags?: boolean      // show collection tag chips below title (pantry page)
 }
 
 /** Remove {tag} count pollution from titles */
@@ -23,7 +25,7 @@ function ingredientCount(recipe: Recipe): string {
   return n === 1 ? '(1 ingredient)' : `(${n} ingredients)`
 }
 
-export default function RecipeCard({ recipe, onClick, onDelete, pantryMatch }: Props) {
+export default function RecipeCard({ recipe, onClick, onDelete, pantryMatch, matchPercent, showTags }: Props) {
   const count = ingredientCount(recipe)
 
   return (
@@ -45,12 +47,27 @@ export default function RecipeCard({ recipe, onClick, onDelete, pantryMatch }: P
             <div className="w-full h-full flex items-center justify-center text-4xl select-none">🍽️</div>
           )}
 
-          {/* Pantry Friendly badge */}
+          {/* Pantry Friendly badge (My Recipes page) */}
           {pantryMatch && (
             <div className="absolute bottom-2 left-2">
               <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-emerald-500 text-white rounded-full px-2 py-0.5 shadow-sm leading-snug">
                 <Leaf size={9} strokeWidth={2.5} />
                 Pantry Friendly
+              </span>
+            </div>
+          )}
+
+          {/* Match % badge (pantry matching page) */}
+          {matchPercent !== undefined && (
+            <div className="absolute bottom-2 left-2">
+              <span className={`inline-flex items-center text-[10px] font-bold rounded-full px-2 py-0.5 shadow-sm leading-snug ${
+                matchPercent >= 80
+                  ? 'bg-emerald-500 text-white'
+                  : matchPercent >= 60
+                  ? 'bg-amber-500 text-white'
+                  : 'bg-surface border border-border text-muted'
+              }`}>
+                {matchPercent}% match
               </span>
             </div>
           )}
@@ -71,6 +88,15 @@ export default function RecipeCard({ recipe, onClick, onDelete, pantryMatch }: P
               <span className="text-xs text-subtle">{count}</span>
             )}
           </div>
+          {showTags && recipe.tags && recipe.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-2">
+              {recipe.tags.map(tag => (
+                <span key={tag} className="text-[10px] font-medium text-accent bg-accent/10 border border-accent/15 rounded-full px-2 py-0.5 capitalize">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </button>
 
