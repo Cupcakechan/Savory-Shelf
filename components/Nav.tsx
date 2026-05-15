@@ -102,7 +102,7 @@ export default function Nav() {
   const router = useRouter()
 
   const linkCls = (href: string) =>
-    `text-sm font-medium px-3 py-2 sm:py-1.5 rounded-lg transition-colors ` +
+    `text-sm font-medium px-3 py-2 sm:py-1.5 rounded-lg transition-colors cursor-pointer touch-manipulation select-none ` +
     (path === href ? 'bg-surface text-text' : 'text-muted hover:text-text hover:bg-surface/60')
 
   return (
