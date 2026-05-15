@@ -114,7 +114,10 @@ Never count these against the match score; treat them as already covered.
 - Partial coverage counts: "chicken breast" in pantry covers a recipe calling for "diced chicken".
 - Round score to the nearest integer.
 - For "missing": list only the non-trivial ingredients the user does NOT have — use short, \
-  readable names (e.g. "2 eggs", "1 cup milk", "cheddar cheese"). Keep each item brief.
+  readable names (e.g. "2 eggs", "1 cup milk", "cheddar cheese"). Keep each item brief. \
+  Important: if the user has a partial quantity of an ingredient (e.g. they have "5 eggs" but \
+  the recipe needs "8 eggs"), list only the remaining amount needed with friendly phrasing \
+  (e.g. "3 more eggs"). If the user has none of it, list the full amount as normal.
 
 Return ONLY a valid JSON object mapping each recipe ID to an object with "score" (integer 0–100) \
 and "missing" (array of missing ingredient strings) — no markdown, no code fences:

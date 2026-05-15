@@ -31,7 +31,7 @@ export default function MyPantryPage() {
   // Matching
   const [scores, setScores]     = useState<Record<string, number>>({})
   const [missing, setMissing]   = useState<Record<string, string[]>>({})
-  const [threshold, setThreshold] = useState(70)
+  const [threshold, setThreshold] = useState(50)
   const [scoring, setScoring]   = useState(false)
 
   // Recipe detail view
