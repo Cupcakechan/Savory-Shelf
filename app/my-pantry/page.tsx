@@ -25,13 +25,14 @@ export default function MyPantryPage() {
   const [input, setInput]   = useState('')
 
   // Saved recipes
-  const [recipes, setRecipes]       = useState<Recipe[]>([])
+  const [recipes, setRecipes]           = useState<Recipe[]>([])
   const [recipesReady, setRecipesReady] = useState(false)
 
   // Matching
-  const [scores, setScores]       = useState<Record<string, number>>({})
+  const [scores, setScores]     = useState<Record<string, number>>({})
+  const [missing, setMissing]   = useState<Record<string, string[]>>({})
   const [threshold, setThreshold] = useState(70)
-  const [scoring, setScoring]     = useState(false)
+  const [scoring, setScoring]   = useState(false)
 
   // Recipe detail view
   const [selected, setSelected] = useState<Recipe | null>(null)
@@ -45,15 +46,11 @@ export default function MyPantryPage() {
       if (!session?.user) { router.replace('/'); return }
       setUser(session.user)
 
-      // Show cached pantry instantly — DB fetch still runs for freshness
       try {
         const cached = sessionStorage.getItem('savoryshelf-pantry')
         if (cached) setPantry(JSON.parse(cached))
       } catch {}
 
-      // Start both fetches simultaneously — they run in parallel.
-      // Await pantry first (single tiny row) so the page can appear
-      // before the potentially-larger recipes list has finished loading.
       const pantryPromise  = supabase.from('pantry').select('staples').eq('user_id', session.user.id).maybeSingle()
       const recipesPromise = supabase.from('recipes').select(LIST_COLUMNS).order('created_at', { ascending: false })
 
@@ -61,7 +58,7 @@ export default function MyPantryPage() {
       const staples = pantryRes.data?.staples ?? []
       setPantry(staples)
       try { sessionStorage.setItem('savoryshelf-pantry', JSON.stringify(staples)) } catch {}
-      setLoading(false)   // ← page appears here; recipes may still be in-flight
+      setLoading(false)
 
       const recipesRes = await recipesPromise
       if (recipesRes.data) setRecipes(recipesRes.data.map(fromDbRecipe))
@@ -71,11 +68,9 @@ export default function MyPantryPage() {
   }, [])
 
   // ── Debounced Grok scoring ────────────────────────────
-  // Fires 800 ms after the pantry or recipe list last changed.
-  // Slider changes never re-trigger Grok — they just re-filter client-side.
 
   useEffect(() => {
-    if (pantry.length === 0) { setScores({}); return }
+    if (pantry.length === 0) { setScores({}); setMissing({}); return }
     if (recipes.length === 0) return
 
     clearTimeout(scoreTimer.current)
@@ -85,7 +80,10 @@ export default function MyPantryPage() {
         recipes.map(r => ({ id: r.id, ingredients: r.ingredients })),
         pantry,
       )
-      if (result) setScores(result)
+      if (result) {
+        setScores(result.scores)
+        setMissing(result.missing)
+      }
       setScoring(false)
     }, 800)
 
@@ -107,11 +105,10 @@ export default function MyPantryPage() {
   const persistPantry = (next: string[]) => {
     if (!user) return
     try { sessionStorage.setItem('savoryshelf-pantry', JSON.stringify(next)) } catch {}
-    // Reset match_cache so My Recipes page re-runs Grok on next visit
     supabase.from('pantry').upsert({ user_id: user.id, staples: next, match_cache: {} })
   }
 
-  // ── Add ingredients (supports comma / newline-separated paste) ──
+  // ── Add ingredients ───────────────────────────────────
 
   const addIngredients = () => {
     const vals = input
@@ -134,6 +131,7 @@ export default function MyPantryPage() {
   const clearAll = () => {
     setPantry([])
     setScores({})
+    setMissing({})
     persistPantry([])
   }
 
@@ -141,6 +139,7 @@ export default function MyPantryPage() {
     await supabase.from('recipes').delete().eq('id', id)
     setRecipes(prev => prev.filter(r => r.id !== id))
     setScores(prev => { const n = { ...prev }; delete n[id]; return n })
+    setMissing(prev => { const n = { ...prev }; delete n[id]; return n })
   }
 
   // ── Render guards ──────────────────────────────────────
@@ -165,6 +164,7 @@ export default function MyPantryPage() {
         recipe={selected}
         onBack={() => setSelected(null)}
         initialSaved={true}
+        missingIngredients={missing[selected.id] ?? []}
       />
     )
   }
@@ -211,9 +211,14 @@ export default function MyPantryPage() {
           className="w-full bg-transparent text-sm text-text placeholder:text-subtle outline-none resize-none leading-relaxed mb-3"
         />
         <div className="flex items-center justify-between gap-3">
-          <p className="text-xs text-subtle">
-            Separate with commas or new lines, then tap Add
-          </p>
+          <div className="space-y-0.5">
+            <p className="text-xs text-subtle">
+              Separate with commas or new lines, then tap Add
+            </p>
+            <p className="text-xs text-subtle/70">
+              Tip: be as specific as you like — "2 eggs, 1 lb chicken" or just "eggs, chicken" both work great
+            </p>
+          </div>
           <button
             onClick={addIngredients}
             disabled={!input.trim()}
@@ -334,6 +339,7 @@ export default function MyPantryPage() {
                   onClick={() => setSelected(r)}
                   onDelete={handleDelete}
                   matchPercent={scores[r.id]}
+                  missingCount={(missing[r.id] ?? []).length}
                   showTags
                 />
               ))}

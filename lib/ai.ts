@@ -99,7 +99,7 @@ Return ONLY a valid JSON object mapping each recipe ID to a boolean — no markd
 
 const PANTRY_SCORE_SYSTEM = `\
 You are a culinary expert. Given a list of available ingredients, score each recipe by what \
-percentage of its ingredients are covered by what's available.
+percentage of its ingredients are covered, and list the missing ones.
 
 Scoring rules:
 - Score = percentage of the recipe's non-trivial ingredients that are covered (integer 0–100).
@@ -112,10 +112,13 @@ Never count these against the match score; treat them as already covered.
 "flour" covers plain/all-purpose flour; "butter" covers salted/unsalted; \
 "milk" covers whole/semi/skimmed; "stock" covers broth; "chicken" covers chicken breast/thigh; etc.
 - Partial coverage counts: "chicken breast" in pantry covers a recipe calling for "diced chicken".
-- Round to the nearest integer.
+- Round score to the nearest integer.
+- For "missing": list only the non-trivial ingredients the user does NOT have — use short, \
+  readable names (e.g. "2 eggs", "1 cup milk", "cheddar cheese"). Keep each item brief.
 
-Return ONLY a valid JSON object mapping each recipe ID to its integer score (0–100) — no markdown, no code fences:
-{"recipeId1": 85, "recipeId2": 42, "recipeId3": 100}`
+Return ONLY a valid JSON object mapping each recipe ID to an object with "score" (integer 0–100) \
+and "missing" (array of missing ingredient strings) — no markdown, no code fences:
+{"recipeId1": {"score": 85, "missing": ["2 eggs", "1 cup milk"]}, "recipeId2": {"score": 100, "missing": []}}`
 
 // ── Exported types ────────────────────────────────────────
 
@@ -143,6 +146,11 @@ export interface ParsedRecipeResult {
   prepTime?: string | null
   cookTime?: string | null
   imageUrl?: string | null
+}
+
+export interface PantryScoreResult {
+  scores:  Record<string, number>
+  missing: Record<string, string[]>
 }
 
 // ── Server Actions ────────────────────────────────────────
@@ -273,15 +281,20 @@ export async function checkPantryMatchBatch(
 
 /**
  * Score each recipe 0–100 based on how many of its ingredients the user
- * currently has. Used by the "What I Have" pantry matching page.
- * Returns a map of { recipeId: score } where score is an integer 0–100.
+ * currently has, and return the list of missing ingredients per recipe.
+ * Used by the "What I Have" pantry matching page.
  */
 export async function scoreRecipesByPantry(
   recipes: Array<{ id: string; ingredients: string[] }>,
   pantry: string[],
-): Promise<{ result?: Record<string, number>; error?: string }> {
+): Promise<{ result?: PantryScoreResult; error?: string }> {
   if (recipes.length === 0 || pantry.length === 0) {
-    return { result: Object.fromEntries(recipes.map(r => [r.id, 0])) }
+    return {
+      result: {
+        scores:  Object.fromEntries(recipes.map(r => [r.id, 0])),
+        missing: Object.fromEntries(recipes.map(r => [r.id, []])),
+      },
+    }
   }
 
   try {
@@ -302,15 +315,18 @@ export async function scoreRecipesByPantry(
       prompt,
     })
 
-    const raw = parseJson<Record<string, number>>(text)
-    // Clamp all values to 0–100 integers in case the model drifts
-    const result = Object.fromEntries(
-      Object.entries(raw).map(([id, score]) => [
-        id,
-        Math.max(0, Math.min(100, Math.round(Number(score) || 0))),
-      ])
-    )
-    return { result }
+    // Grok now returns { recipeId: { score: number, missing: string[] } }
+    const raw = parseJson<Record<string, { score: number; missing: string[] }>>(text)
+
+    const scores:  Record<string, number>   = {}
+    const missing: Record<string, string[]> = {}
+
+    for (const [id, val] of Object.entries(raw)) {
+      scores[id]  = Math.max(0, Math.min(100, Math.round(Number(val?.score) || 0)))
+      missing[id] = Array.isArray(val?.missing) ? val.missing : []
+    }
+
+    return { result: { scores, missing } }
   } catch (err) {
     secLog('error', { event: 'ai_failure', fn: 'scoreRecipesByPantry', error: err instanceof Error ? err.message : String(err) })
     const msg = err instanceof Error ? err.message : String(err)

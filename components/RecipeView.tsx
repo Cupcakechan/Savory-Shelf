@@ -237,6 +237,7 @@ interface Props {
   onBack?: () => void
   initialSaved?: boolean
   readOnly?: boolean
+  missingIngredients?: string[]   // passed from Pantry page to highlight what's needed
 }
 
 export default function RecipeView({
@@ -244,6 +245,7 @@ export default function RecipeView({
   onBack,
   initialSaved = false,
   readOnly = false,
+  missingIngredients,
 }: Props) {
   const [recipe, setRecipe]               = useState(initialRecipe)
   const baseServings                      = recipe.servings ?? 4
@@ -516,6 +518,33 @@ export default function RecipeView({
             {recipe.prepTime && <Chip icon={<Clock size={13} />} label={`Prep ${formatTime(recipe.prepTime)}`} />}
             {recipe.cookTime && <Chip icon={<Clock size={13} />} label={`Cook ${formatTime(recipe.cookTime)}`} />}
             {recipe.servings && <Chip icon={<Users size={13} />} label={`${recipe.servings} servings`} />}
+          </div>
+        )}
+
+        {/* Missing ingredients banner — only shown when opened from the Pantry page */}
+        {missingIngredients && missingIngredients.length > 0 && (
+          <div className="bg-amber-500/8 border border-amber-500/20 rounded-2xl px-4 py-3.5 mb-6">
+            <p className="text-xs font-semibold text-amber-500 uppercase tracking-wider mb-2">
+              Still need to grab
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {missingIngredients.map((item, i) => (
+                <span
+                  key={i}
+                  className="text-xs font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-full px-2.5 py-1 capitalize"
+                >
+                  {item}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+        {missingIngredients && missingIngredients.length === 0 && (
+          <div className="bg-emerald-500/8 border border-emerald-500/20 rounded-2xl px-4 py-3 mb-6 flex items-center gap-2.5">
+            <span className="text-base select-none">✅</span>
+            <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+              You have everything for this recipe — time to cook!
+            </p>
           </div>
         )}
 

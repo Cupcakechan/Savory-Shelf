@@ -6,6 +6,7 @@ interface Props {
   onClick: () => void
   onDelete: (id: string) => void
   matchPercent?: number   // 0-100 — shows a coloured % badge (pantry page)
+  missingCount?: number   // how many ingredients are missing (pantry page)
   showTags?: boolean      // show collection tag chips below title (pantry page)
 }
 
@@ -24,7 +25,7 @@ function ingredientCount(recipe: Recipe): string {
   return n === 1 ? '(1 ingredient)' : `(${n} ingredients)`
 }
 
-export default function RecipeCard({ recipe, onClick, onDelete, matchPercent, showTags }: Props) {
+export default function RecipeCard({ recipe, onClick, onDelete, matchPercent, missingCount, showTags }: Props) {
   const count = ingredientCount(recipe)
 
   return (
@@ -77,6 +78,19 @@ export default function RecipeCard({ recipe, onClick, onDelete, matchPercent, sh
               <span className="text-xs text-subtle">{count}</span>
             )}
           </div>
+
+          {/* Missing count — only shown on pantry page when data is available */}
+          {missingCount !== undefined && missingCount > 0 && (
+            <p className="mt-1.5 text-[11px] text-amber-500/80 font-medium">
+              Missing: {missingCount} ingredient{missingCount !== 1 ? 's' : ''}
+            </p>
+          )}
+          {missingCount === 0 && matchPercent !== undefined && (
+            <p className="mt-1.5 text-[11px] text-emerald-500/80 font-medium">
+              You have everything!
+            </p>
+          )}
+
           {showTags && recipe.tags && recipe.tags.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-2">
               {recipe.tags.map(tag => (
