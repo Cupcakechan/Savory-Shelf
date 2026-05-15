@@ -100,7 +100,7 @@ Return ONLY a valid JSON object mapping each recipe ID to a boolean — no markd
 
 const PANTRY_SCORE_SYSTEM = `\
 You are a culinary expert. Given a list of available ingredients, score each recipe by what \
-percentage of its ingredients are covered, and list the missing ones.
+percentage of its ingredients are covered by what's available.
 
 Scoring rules:
 - Score = percentage of the recipe's non-trivial ingredients that are covered (integer 0–100).
@@ -113,16 +113,10 @@ Never count these against the match score; treat them as already covered.
 "flour" covers plain/all-purpose flour; "butter" covers salted/unsalted; \
 "milk" covers whole/semi/skimmed; "stock" covers broth; "chicken" covers chicken breast/thigh; etc.
 - Partial coverage counts: "chicken breast" in pantry covers a recipe calling for "diced chicken".
-- Round score to the nearest integer.
-- For "missing": list only the non-trivial ingredients the user does NOT have — use short, \
-  readable names (e.g. "2 eggs", "1 cup milk", "cheddar cheese"). Keep each item brief. \
-  Important: if the user has a partial quantity of an ingredient (e.g. they have "5 eggs" but \
-  the recipe needs "8 eggs"), list only the remaining amount needed with friendly phrasing \
-  (e.g. "3 more eggs"). If the user has none of it, list the full amount as normal.
+- Round to the nearest integer.
 
-Return ONLY a valid JSON object mapping each recipe ID to an object with "score" (integer 0–100) \
-and "missing" (array of missing ingredient strings) — no markdown, no code fences:
-{"recipeId1": {"score": 85, "missing": ["2 eggs", "1 cup milk"]}, "recipeId2": {"score": 100, "missing": []}}`
+Return ONLY a valid JSON object mapping each recipe ID to its integer score (0–100) — no markdown, no code fences:
+{"recipeId1": 85, "recipeId2": 42, "recipeId3": 100}`
 
 // ── Exported types ────────────────────────────────────────
 
@@ -325,31 +319,23 @@ export async function scoreRecipesByPantry(
       abortSignal: AbortSignal.timeout(25_000),  // fail cleanly after 25 s
     })
 
-    // Grok now returns { recipeId: { score: number, missing: string[] } }
-    // Parse defensively: Grok may return the old plain-number format
-    // {"id": 85} or the new object format {"id": {"score": 85, "missing": [...]}}.
-    // Both are handled so format drift never silently zeroes out all scores.
-    const raw = parseJson<Record<string, number | { score: number; missing: string[] }>>(text)
+    // Parse scores — Grok returns {"recipeId": 85} (plain numbers)
+    const raw = parseJson<Record<string, number>>(text)
 
-    const scores:  Record<string, number>   = {}
-    const missing: Record<string, string[]> = {}
+    // Clamp all values to 0–100 integers; missing computed client-side
+    const scores: Record<string, number> = Object.fromEntries(
+      Object.entries(raw).map(([id, score]) => [
+        id,
+        Math.max(0, Math.min(100, Math.round(Number(score) || 0))),
+      ])
+    )
 
-    for (const [id, val] of Object.entries(raw)) {
-      if (typeof val === 'number') {
-        // Old format — plain score, no missing data
-        scores[id]  = Math.max(0, Math.min(100, Math.round(val)))
-        missing[id] = []
-      } else {
-        scores[id]  = Math.max(0, Math.min(100, Math.round(Number(val?.score) || 0)))
-        missing[id] = Array.isArray(val?.missing) ? val.missing : []
-      }
-    }
-
-    return { result: { scores, missing } }
+    return { result: { scores, missing: {} } }
   } catch (err) {
-    secLog('error', { event: 'ai_failure', fn: 'scoreRecipesByPantry', error: err instanceof Error ? err.message : String(err) })
     const msg = err instanceof Error ? err.message : String(err)
+    secLog('error', { event: 'ai_failure', fn: 'scoreRecipesByPantry', error: msg })
     if (msg.includes('XAI_API_KEY')) return { error: msg }
-    return { error: 'Pantry scoring failed — please try again later.' }
+    // Surface the real error so it's visible in the UI and easier to debug
+    return { error: `Pantry scoring failed: ${msg}` }
   }
 }

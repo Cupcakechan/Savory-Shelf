@@ -14,6 +14,19 @@ import RecipeView from '@/components/RecipeView'
 const LIST_COLUMNS =
   'id, title, image_url, prep_time, cook_time, servings, ingredients, instructions, notes, source_url, created_at, tags'
 
+// ── Client-side missing ingredient detection ──────────────
+// Simple substring matching: fast, zero API calls, reliable.
+// Catches "chicken breast" ↔ "chicken", "olive oil" ↔ "oil", etc.
+// Synonym gaps (pasta ↔ spaghetti) are handled by Grok's score;
+// this only drives the "Missing: X" display, not the match %.
+function computeMissing(ingredients: string[], pantry: string[]): string[] {
+  const pantryLower = pantry.map(p => p.toLowerCase())
+  return ingredients.filter(ing => {
+    const ingLower = ing.toLowerCase()
+    return !pantryLower.some(p => ingLower.includes(p) || p.includes(ingLower))
+  })
+}
+
 export default function MyPantryPage() {
   const router = useRouter()
 
@@ -85,7 +98,13 @@ export default function MyPantryPage() {
         )
         if (result) {
           setScores(result.scores)
-          setMissing(result.missing)
+          // Compute missing ingredients client-side from the pantry and
+          // each recipe's ingredient list — fast, no extra API call needed.
+          const clientMissing: Record<string, string[]> = {}
+          for (const r of recipes) {
+            clientMissing[r.id] = computeMissing(r.ingredients, pantry)
+          }
+          setMissing(clientMissing)
         } else {
           setScoringError(error ?? 'Could not score recipes — please try again.')
         }
