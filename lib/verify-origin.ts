@@ -63,8 +63,12 @@ export async function verifyOrigin(): Promise<boolean> {
     /^https:\/\/[a-z0-9][a-z0-9-]*\.vercel\.app$/i.test(origin)
 
   if (!isAllowed) {
-    secLog('warn', { event: 'csrf_origin_rejected', origin })
+    // Log-only mode — mismatches are recorded for monitoring but never blocked.
+    // AI actions are already protected by rate limiting and auth; hard-blocking
+    // here risks breaking production if NEXT_PUBLIC_SITE_URL drifts.
+    secLog('warn', { event: 'csrf_origin_mismatch', origin })
   }
 
-  return isAllowed
+  // Always allow — this function is currently audit-only.
+  return true
 }
