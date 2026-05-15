@@ -727,7 +727,17 @@ export default function RecipeView({
           </div>
         )}
 
-        <Section title="Ingredients">
+        <Section
+          title="Ingredients"
+          action={checked.size > 0 ? (
+            <button
+              onClick={() => setChecked(new Set())}
+              className="text-sm font-medium text-muted hover:text-text py-2 px-3 rounded-xl hover:bg-surface transition-colors active:scale-[.97] touch-manipulation select-none"
+            >
+              Uncheck all
+            </button>
+          ) : undefined}
+        >
           <ul className="space-y-1">
             {recipe.ingredients.map((ing, i) => (
               <li key={i} onClick={() => toggleCheck(i)} className={`flex items-start gap-3 px-3 py-3 sm:py-2.5 rounded-xl cursor-pointer select-none transition-all ${checked.has(i) ? 'opacity-40' : 'hover:bg-surface active:scale-[.99]'}`}>
@@ -789,10 +799,13 @@ function Chip({ icon, label }: { icon: React.ReactNode; label: string }) {
   )
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
   return (
     <section className="mb-10">
-      <h2 className="font-display text-xl font-bold text-text mb-4 pb-3 border-b border-border">{title}</h2>
+      <div className="flex items-center justify-between pb-3 mb-4 border-b border-border">
+        <h2 className="font-display text-xl font-bold text-text">{title}</h2>
+        {action}
+      </div>
       {children}
     </section>
   )
