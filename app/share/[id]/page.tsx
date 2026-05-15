@@ -18,7 +18,12 @@ export default async function SharePage({
 
   const { data } = await supabase
     .from('recipes')
-    .select('*')
+    .select(
+      // Explicit allowlist — never expose user_id or other internal columns
+      // on the public share route, even if new columns are added to the table.
+      'id, title, image_url, image_base64, prep_time, cook_time, servings, ' +
+      'ingredients, instructions, notes, source_url, created_at, tags, is_public'
+    )
     .eq('id', id)
     .eq('is_public', true)
     .maybeSingle()

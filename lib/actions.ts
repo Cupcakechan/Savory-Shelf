@@ -24,16 +24,31 @@ function isSafeUrl(raw: string): boolean {
 
   // Private / reserved IPv4
   if (
-    /^127\./.test(h) ||                          // loopback
-    /^10\./.test(h) ||                           // RFC 1918
-    /^192\.168\./.test(h) ||                     // RFC 1918
-    /^172\.(1[6-9]|2[0-9]|3[01])\./.test(h) ||  // RFC 1918
-    /^169\.254\./.test(h) ||                     // link-local
-    /^0\./.test(h)                               // "this" network
+    /^127\./.test(h) ||                                    // loopback
+    /^10\./.test(h) ||                                     // RFC 1918
+    /^192\.168\./.test(h) ||                              // RFC 1918
+    /^172\.(1[6-9]|2[0-9]|3[01])\./.test(h) ||           // RFC 1918
+    /^169\.254\./.test(h) ||                              // link-local
+    /^0\./.test(h) ||                                      // "this" network
+    /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(h) || // CGNAT 100.64/10
+    /^(22[4-9]|23\d)\./.test(h) ||                       // multicast 224/4
+    /^192\.0\.2\./.test(h) ||                            // TEST-NET-1 (docs)
+    /^198\.51\.100\./.test(h) ||                         // TEST-NET-2 (docs)
+    /^203\.0\.113\./.test(h) ||                          // TEST-NET-3 (docs)
+    /^198\.1[89]\./.test(h) ||                            // benchmark 198.18/15
+    h === '255.255.255.255'                                 // broadcast
   ) return false
 
-  // IPv6 loopback / unique-local
-  if (h === '::1' || /^\[?fc/i.test(h) || /^\[?fd/i.test(h)) return false
+  // IPv6 loopback / unique-local / link-local / multicast / documentation
+  if (
+    h === '::1'              ||   // loopback
+    h === '::'               ||   // unspecified
+    /^\[?fc/i.test(h)        ||   // unique-local fc00::/7
+    /^\[?fd/i.test(h)        ||   // unique-local fd00::/8
+    /^\[?fe[89ab]/i.test(h)  ||   // link-local fe80::/10
+    /^\[?ff/i.test(h)        ||   // multicast ff00::/8
+    /^\[?2001:db8:/i.test(h)      // documentation 2001:db8::/32
+  ) return false
 
   return true
 }
@@ -455,8 +470,21 @@ export async function importRecipe(
     return { error: 'Please enter a valid https:// recipe URL from a public website.' }
   }
 
-  const key = await getRateLimitKey()
-  if (await checkRateLimit(key, 10)) {
+  // Auth check — determines rate-limit tier and storage eligibility.
+  // Unauthenticated users may still import (URL fetch + parse) but we skip
+  // the service-role storage upload so anonymous callers cannot drive
+  // bandwidth/storage costs via the admin client.
+  const serverClient = await createSupabaseServerClient()
+  const { data: { user } } = await serverClient.auth.getUser()
+  const isAuthenticated = !!user
+
+  // Strict fail-closed rate limit — importRecipe triggers external fetches
+  // and (for authenticated users) Supabase Storage writes, so it must not
+  // fail open when the rate-limit backend is unavailable.
+  // Anonymous callers get a tighter cap (5/min vs 10/min).
+  const key = await getRateLimitKey(user?.id)
+  const rateMax = isAuthenticated ? 10 : 5
+  if (await checkRateLimit(key, rateMax, 60_000, true)) {
     return { error: 'Too many import requests — please wait a minute and try again.' }
   }
 
@@ -511,8 +539,10 @@ export async function importRecipe(
     const recipe = extractJsonLd(html) ?? extractHtmlFallback(html)
     recipe.sourceUrl = target
 
-    // Upload image to Supabase Storage; fall back to in-memory placeholder
-    recipe.image = recipe.image
+    // Upload image to Supabase Storage (authenticated users only).
+    // Anonymous callers skip the service-role upload — they still see the
+    // placeholder in the preview, and the image is stored when they save.
+    recipe.image = (isAuthenticated && recipe.image)
       ? (await uploadImageToStorage(recipe.image, target, recipe.id)) ?? PLACEHOLDER_IMAGE
       : PLACEHOLDER_IMAGE
 

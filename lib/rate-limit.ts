@@ -27,10 +27,14 @@ export async function getRateLimitKey(userId?: string): Promise<string> {
 /**
  * Atomically checks and increments the rate limit for `key` via a
  * Supabase stored procedure — durable and consistent across all
- * serverless instances (replaces the old in-memory Map approach).
+ * serverless instances.
  *
  * Returns true if the request should be blocked.
- * Fails open on DB errors so infra issues never block legitimate users.
+ *
+ * `strict` mode (default false):
+ *   - false → fail-open on RPC errors (safe for low-risk endpoints)
+ *   - true  → fail-closed on RPC errors (required for expensive endpoints
+ *             like importRecipe and AI calls where abuse = real cost)
  *
  * Prerequisite: run the SQL in docs/rate-limit-migration.sql in Supabase.
  */
@@ -38,6 +42,7 @@ export async function checkRateLimit(
   key: string,
   max: number,
   windowMs = 60_000,
+  strict = false,
 ): Promise<boolean> {
   try {
     const { data, error } = await supabaseAdmin.rpc('check_rate_limit', {
@@ -47,20 +52,30 @@ export async function checkRateLimit(
     })
 
     if (error) {
-      // Fail open — rate-limit infra errors must not block real users
+      if (strict) {
+        // Fail-closed: RPC down during high-cost operation → deny the request.
+        // Protects against abuse bursts that coincide with infra instability.
+        secLog('warn', { event: 'rate_limit_rpc_error_strict_deny', key, error: error.message })
+        return true
+      }
+      // Fail-open: infra issues must not block legitimate users on low-risk paths
       console.error('[rate-limit] Supabase RPC error:', error.message)
       return false
     }
 
     if (data === true) {
-      // key is already hashed — safe to log
       secLog('warn', { event: 'rate_limit_triggered', key, max })
       return true
     }
 
     return false
   } catch (err) {
-    console.error('[rate-limit] Unexpected error:', err instanceof Error ? err.message : String(err))
-    return false  // fail open
+    const msg = err instanceof Error ? err.message : String(err)
+    if (strict) {
+      secLog('warn', { event: 'rate_limit_exception_strict_deny', key, error: msg })
+      return true   // fail-closed
+    }
+    console.error('[rate-limit] Unexpected error:', msg)
+    return false    // fail-open
   }
 }

@@ -163,7 +163,7 @@ export async function translateRecipe(
 ): Promise<{ result?: TranslateResult; error?: string }> {
   try {
     const key = await getRateLimitKey()
-    if (await checkRateLimit(key, 8)) return { error: 'Too many requests — please wait a moment and try again.' }
+    if (await checkRateLimit(key, 8, 60_000, true)) return { error: 'Too many requests — please wait a moment and try again.' }
 
     const prompt =
       `Translate this recipe into English.\n\n` +
@@ -193,7 +193,7 @@ export async function suggestSubstitutes(
 ): Promise<{ result?: SubstitutesResult; error?: string }> {
   try {
     const key = await getRateLimitKey()
-    if (await checkRateLimit(key, 8)) return { error: 'Too many requests — please wait a moment and try again.' }
+    if (await checkRateLimit(key, 8, 60_000, true)) return { error: 'Too many requests — please wait a moment and try again.' }
 
     const prompt =
       `Recipe: "${recipe.title}"\n\n` +
@@ -223,7 +223,7 @@ export async function parseRecipeText(
 ): Promise<{ result?: ParsedRecipeResult; error?: string }> {
   try {
     const key = await getRateLimitKey()
-    if (await checkRateLimit(key, 8)) return { error: 'Too many requests — please wait a moment and try again.' }
+    if (await checkRateLimit(key, 8, 60_000, true)) return { error: 'Too many requests — please wait a moment and try again.' }
 
     const { text: raw } = await generateText({
       model: getModel(),
@@ -257,7 +257,7 @@ export async function checkPantryMatchBatch(
 
   try {
     const key = await getRateLimitKey()
-    if (await checkRateLimit(key, 8)) return { error: 'Too many requests — please wait a moment and try again.' }
+    if (await checkRateLimit(key, 8, 60_000, true)) return { error: 'Too many requests — please wait a moment and try again.' }
 
     const recipeList = recipes
       .map(r => `- ${r.id} | ${r.ingredients.slice(0, 20).join(', ')}`)
@@ -302,7 +302,7 @@ export async function scoreRecipesByPantry(
 
   try {
     const key = await getRateLimitKey()
-    if (await checkRateLimit(key, 8)) return { error: 'Too many requests — please wait a moment and try again.' }
+    if (await checkRateLimit(key, 8, 60_000, true)) return { error: 'Too many requests — please wait a moment and try again.' }
 
     const recipeList = recipes
       .map(r => `- ${r.id} | ${r.ingredients.slice(0, 20).join(', ')}`)
