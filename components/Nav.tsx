@@ -29,8 +29,9 @@ function ThemeToggle() {
 // ── Auth section ──────────────────────────────────────────
 
 function AuthSection() {
-  const [user, setUser] = useState<User | null>(null)
-  const [showAuth, setShowAuth] = useState(false)
+  const [user, setUser]           = useState<User | null>(null)
+  const [showAuth, setShowAuth]   = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -59,14 +60,24 @@ function AuthSection() {
     return () => window.removeEventListener('storage', handler)
   }, [router])
 
+  const handleSignOut = async () => {
+    if (signingOut) return          // prevent double-clicks
+    setSigningOut(true)
+    await supabase.auth.signOut()   // awaited — clears session cookie reliably
+    setSigningOut(false)
+    router.push('/')                // land on a clean page immediately
+    router.refresh()                // bust the Next.js router cache
+  }
+
   if (user) return (
     <div className="flex items-center gap-2">
       <span className="text-xs text-muted hidden sm:block max-w-[100px] truncate">{user.email}</span>
       <button
-        onClick={() => supabase.auth.signOut()}
-        className="text-xs font-medium text-muted hover:text-text border border-border hover:border-accent/40 px-2.5 py-2 sm:py-1.5 rounded-lg transition-colors"
+        onClick={handleSignOut}
+        disabled={signingOut}
+        className="text-xs font-medium text-muted hover:text-text border border-border hover:border-accent/40 px-2.5 py-2 sm:py-1.5 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        Sign out
+        {signingOut ? 'Signing out…' : 'Sign out'}
       </button>
     </div>
   )
