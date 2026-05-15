@@ -42,8 +42,17 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="min-h-screen bg-bg font-body antialiased flex flex-col">
         <Nav />
         <main className="px-4 max-w-2xl mx-auto flex-1 w-full">{children}</main>
-        <footer className="border-t border-border py-5 text-center mt-8">
+        <footer className="border-t border-border py-5 text-center mt-8 space-y-1.5">
           <p className="text-xs text-subtle">SavoryShelf by Cocolito Collective</p>
+          <p className="text-xs text-subtle">
+            Have a feature in mind or encountered a bug?{' '}
+            <a
+              href="mailto:Cocolitocollective@savoryshelf.com"
+              className="text-muted hover:text-accent transition-colors"
+            >
+              Cocolitocollective@savoryshelf.com
+            </a>
+          </p>
         </footer>
         <Analytics />
       </body>
