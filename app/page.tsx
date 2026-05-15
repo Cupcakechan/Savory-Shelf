@@ -344,6 +344,12 @@ export default function ImportPage() {
             <span>{error}</span>
           </div>
         )}
+
+        <p className="mt-4 pt-4 border-t border-border text-xs text-subtle leading-relaxed text-center">
+          Want to save your recipe book for later?{' '}
+          <span className="text-muted">Log in with your email — your recipes will always be there.</span>
+          {' '}We only use your email to save your collection.
+        </p>
       </div>
 
       <p className="mt-6 text-xs text-subtle text-center">
