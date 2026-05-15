@@ -412,8 +412,8 @@ export default function RecipeView({
   const toggleSave = async () => {
     let currentUser = user
     if (!currentUser) {
-      const { data: { session } } = await supabase.auth.getSession()
-      currentUser = session?.user ?? null
+      const { data: { user: freshUser } } = await supabase.auth.getUser()
+      currentUser = freshUser ?? null
       if (currentUser) setUser(currentUser)
     }
     if (!currentUser) { setShowAuth(true); return }
@@ -430,8 +430,8 @@ export default function RecipeView({
   const handleShare = async () => {
     let currentUser = user
     if (!currentUser) {
-      const { data: { session } } = await supabase.auth.getSession()
-      currentUser = session?.user ?? null
+      const { data: { user: freshUser } } = await supabase.auth.getUser()
+      currentUser = freshUser ?? null
       if (currentUser) setUser(currentUser)
     }
     if (!currentUser) { setShowAuth(true); return }
