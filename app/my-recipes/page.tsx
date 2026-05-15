@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { BookOpen, Search, X } from 'lucide-react'
+import { BookOpen, Search, X, Sprout } from 'lucide-react'
 import Link from 'next/link'
 import type { User } from '@supabase/supabase-js'
 import { Recipe } from '@/lib/types'
@@ -159,10 +159,6 @@ export default function MyRecipesPage() {
   // ── Mount ───────────────────────────────────────────────
 
   useEffect(() => {
-    // getSession reads from a local cookie — near-instant.
-    // Once we have the user, run loadRecipes + loadPantry in parallel so
-    // the pantry cache arrives at the same time as the recipe list and
-    // badges can render without a second DB round-trip delay.
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       setUser(session?.user ?? null)
 
@@ -286,6 +282,7 @@ export default function MyRecipesPage() {
   return (
     <div className="py-8">
 
+      {/* Header */}
       <div className="flex items-baseline justify-between mb-5">
         <h1 className="font-display text-2xl font-bold text-text">My Recipes</h1>
         <span className="text-sm text-muted">
@@ -297,6 +294,17 @@ export default function MyRecipesPage() {
         </span>
       </div>
 
+      {/* Pantry discovery tip */}
+      <div className="flex items-start gap-3 bg-accent/5 border border-accent/20 rounded-2xl px-4 py-3.5 mb-5">
+        <Sprout size={15} className="text-accent flex-shrink-0 mt-0.5" />
+        <p className="text-xs text-muted leading-relaxed">
+          <span className="text-accent font-semibold">Pantry tip —</span>{' '}
+          Use the <span className="text-text font-medium">Pantry</span> tab to match recipes to what you already have at home.
+          It shows match % and missing ingredients — different from the search bar above.
+        </p>
+      </div>
+
+      {/* Search */}
       <div className="flex gap-2 mb-5">
         <div className="flex-1 flex items-center gap-2.5 bg-surface border border-border rounded-xl px-3.5 py-3 focus-within:border-accent/50 transition-colors">
           <Search size={15} className="text-muted flex-shrink-0" />
