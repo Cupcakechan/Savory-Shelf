@@ -325,14 +325,23 @@ export async function scoreRecipesByPantry(
     })
 
     // Grok now returns { recipeId: { score: number, missing: string[] } }
-    const raw = parseJson<Record<string, { score: number; missing: string[] }>>(text)
+    // Parse defensively: Grok may return the old plain-number format
+    // {"id": 85} or the new object format {"id": {"score": 85, "missing": [...]}}.
+    // Both are handled so format drift never silently zeroes out all scores.
+    const raw = parseJson<Record<string, number | { score: number; missing: string[] }>>(text)
 
     const scores:  Record<string, number>   = {}
     const missing: Record<string, string[]> = {}
 
     for (const [id, val] of Object.entries(raw)) {
-      scores[id]  = Math.max(0, Math.min(100, Math.round(Number(val?.score) || 0)))
-      missing[id] = Array.isArray(val?.missing) ? val.missing : []
+      if (typeof val === 'number') {
+        // Old format — plain score, no missing data
+        scores[id]  = Math.max(0, Math.min(100, Math.round(val)))
+        missing[id] = []
+      } else {
+        scores[id]  = Math.max(0, Math.min(100, Math.round(Number(val?.score) || 0)))
+        missing[id] = Array.isArray(val?.missing) ? val.missing : []
+      }
     }
 
     return { result: { scores, missing } }

@@ -46,6 +46,17 @@ export async function verifyOrigin(): Promise<boolean> {
   // No Origin header → not a browser-initiated cross-site call; allow
   if (!origin) return true
 
+  // If no production URL is configured, skip the check rather than blocking —
+  // an unconfigured allowlist would silently deny all production Server Action
+  // calls. Log a warning so it's visible in Vercel function logs.
+  if (!process.env.NEXT_PUBLIC_SITE_URL) {
+    console.warn(
+      '[verify-origin] NEXT_PUBLIC_SITE_URL is not set — origin check skipped. ' +
+      'Set it in Vercel Environment Variables to enable CSRF protection.',
+    )
+    return true
+  }
+
   const isAllowed =
     getAllowedOrigins().includes(origin) ||
     // Vercel preview URLs  e.g. https://savoryshelf-abc123-cocolito.vercel.app

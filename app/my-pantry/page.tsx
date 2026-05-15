@@ -32,7 +32,8 @@ export default function MyPantryPage() {
   const [scores, setScores]     = useState<Record<string, number>>({})
   const [missing, setMissing]   = useState<Record<string, string[]>>({})
   const [threshold, setThreshold] = useState(50)
-  const [scoring, setScoring]   = useState(false)
+  const [scoring, setScoring]     = useState(false)
+  const [scoringError, setScoringError] = useState('')
 
   // Recipe detail view
   const [selected, setSelected] = useState<Recipe | null>(null)
@@ -76,13 +77,16 @@ export default function MyPantryPage() {
     clearTimeout(scoreTimer.current)
     scoreTimer.current = setTimeout(async () => {
       setScoring(true)
-      const { result } = await scoreRecipesByPantry(
+      setScoringError('')
+      const { result, error } = await scoreRecipesByPantry(
         recipes.map(r => ({ id: r.id, ingredients: r.ingredients })),
         pantry,
       )
       if (result) {
         setScores(result.scores)
         setMissing(result.missing)
+      } else {
+        setScoringError(error ?? 'Could not score recipes — please try again.')
       }
       setScoring(false)
     }, 800)
@@ -132,6 +136,7 @@ export default function MyPantryPage() {
     setPantry([])
     setScores({})
     setMissing({})
+    setScoringError('')
     persistPantry([])
   }
 
@@ -305,6 +310,14 @@ export default function MyPantryPage() {
             <div className="flex items-center justify-center py-16 gap-3">
               <Loader2 size={18} className="text-accent animate-spin" />
               <span className="text-sm text-muted">Matching your recipes with Grok…</span>
+            </div>
+          )}
+
+          {/* Scoring error */}
+          {!scoring && scoringError && (
+            <div className="flex items-start gap-2.5 bg-surface border border-border rounded-xl px-4 py-3 mb-4">
+              <span className="text-base select-none flex-shrink-0">⚠️</span>
+              <p className="text-xs text-muted leading-relaxed">{scoringError}</p>
             </div>
           )}
 
