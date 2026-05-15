@@ -1,70 +1,134 @@
 'use client'
 
-import { Suspense, useEffect } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
 // ── Inner component ───────────────────────────────────────
-// Separated into its own component because useSearchParams()
-// requires a Suspense boundary in Next.js App Router.
+
+type Status = 'loading' | 'done' | 'intent-missing' | 'intent-expired'
 
 function Callback() {
   const router       = useRouter()
   const searchParams = useSearchParams()
+  const [status, setStatus] = useState<Status>('loading')
 
   useEffect(() => {
     const code = searchParams.get('code')
 
     if (!code) {
-      // No code present — just send to home
       router.replace('/')
       return
     }
 
-    // Defense-in-depth: verify the login was initiated from this browser.
-    // Supabase PKCE is the primary security layer — this is an advisory check.
+    // ── Intent marker check (hard failure) ───────────────
+    // The marker is written to localStorage when the user opens the sign-in
+    // modal. Its presence confirms the link was clicked in the same browser
+    // that initiated the flow, guarding against link-hijacking / open
+    // redirect confusion.
+    //
+    // If localStorage is unavailable (rare: some WebViews) we allow through
+    // — we can't reliably enforce the check in that environment.
     try {
       const stateTs = localStorage.getItem('savoryshelf-login-state')
-      if (!stateTs) {
-        console.warn('[auth-callback] No login intent marker — cross-device sign-in or unexpected flow')
-      } else if (Date.now() - parseInt(stateTs, 10) > 10 * 60 * 1000) {
-        console.warn('[auth-callback] Login intent marker expired (>10 min)')
-      }
       localStorage.removeItem('savoryshelf-login-state')
-    } catch (_) {}
 
+      if (!stateTs) {
+        // No marker at all — different browser or unexpected flow
+        setStatus('intent-missing')
+        return
+      }
+
+      const age = Date.now() - parseInt(stateTs, 10)
+      if (age > 10 * 60 * 1000) {
+        // Marker present but older than 10 minutes
+        setStatus('intent-expired')
+        return
+      }
+    } catch (_) {
+      // localStorage unavailable — allow through
+    }
+
+    // ── Exchange the PKCE code ────────────────────────────
     supabase.auth.exchangeCodeForSession(code)
       .then(({ error }) => {
         if (!error) {
-          // Signal the original tab to refresh its auth state instantly
           try {
             localStorage.setItem('savoryshelf-auth-success', String(Date.now()))
           } catch (_) {}
-
-          // Attempt to close this callback tab. Succeeds when the tab was
-          // opened programmatically (e.g. webmail); silently fails for
-          // desktop/mobile email clients — the setTimeout below handles it.
           window.close()
         }
       })
       .finally(() => {
-        // Fallback: if window.close() had no effect we are still running,
-        // so navigate home after a short delay. If the tab already closed,
-        // this timer fires into a dead context and is silently ignored.
+        // Fallback: if window.close() had no effect, navigate home.
         setTimeout(() => router.replace('/'), 300)
       })
   }, [searchParams, router])
 
-  // Visible only for the brief moment before the redirect fires.
-  // Matches the app's dark-mode aesthetic so there is no colour flash.
-  return (
-    <div className="flex items-center justify-center min-h-[calc(100vh-3.5rem)]">
-      <div className="flex flex-col items-center gap-4">
-        <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-        <p className="text-sm text-muted">Signing you in…</p>
+  // ── Loading spinner ───────────────────────────────────
+
+  if (status === 'loading') {
+    return (
+      <div className="flex items-center justify-center min-h-[calc(100vh-3.5rem)]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm text-muted">Signing you in…</p>
+        </div>
       </div>
-    </div>
-  )
+    )
+  }
+
+  // ── Hard-fail: link opened in a different browser ─────
+
+  if (status === 'intent-missing') {
+    return (
+      <div className="flex items-center justify-center min-h-[calc(100vh-3.5rem)] px-4">
+        <div className="max-w-sm w-full text-center">
+          <span className="text-4xl mb-5 block select-none">🔒</span>
+          <h2 className="font-display text-xl font-bold text-text mb-2">
+            Different browser detected
+          </h2>
+          <p className="text-sm text-muted leading-relaxed mb-6">
+            For your security, this link needs to be opened in the same browser
+            where you requested it. Please go back to SavoryShelf and sign in again.
+          </p>
+          <button
+            onClick={() => router.replace('/')}
+            className="w-full py-3 rounded-xl bg-accent text-white text-sm font-semibold hover:bg-accent/90 transition-colors"
+          >
+            Sign in again
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Hard-fail: link expired ───────────────────────────
+
+  if (status === 'intent-expired') {
+    return (
+      <div className="flex items-center justify-center min-h-[calc(100vh-3.5rem)] px-4">
+        <div className="max-w-sm w-full text-center">
+          <span className="text-4xl mb-5 block select-none">⏱️</span>
+          <h2 className="font-display text-xl font-bold text-text mb-2">
+            Link expired
+          </h2>
+          <p className="text-sm text-muted leading-relaxed mb-6">
+            Magic links are only valid for 10 minutes. Please request a new one.
+          </p>
+          <button
+            onClick={() => router.replace('/')}
+            className="w-full py-3 rounded-xl bg-accent text-white text-sm font-semibold hover:bg-accent/90 transition-colors"
+          >
+            Request a new link
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // status === 'done' — window.close() is in flight; this rarely renders
+  return null
 }
 
 // ── Page export ───────────────────────────────────────────

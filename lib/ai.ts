@@ -4,6 +4,7 @@ import { generateText } from 'ai'
 import { createXai } from '@ai-sdk/xai'
 import type { Recipe } from './types'
 import { getRateLimitKey, checkRateLimit } from './rate-limit'
+import { verifyOrigin } from './verify-origin'
 import { secLog } from './sec-log'
 
 // ── Model ─────────────────────────────────────────────────
@@ -162,6 +163,7 @@ export async function translateRecipe(
   recipe: Recipe,
 ): Promise<{ result?: TranslateResult; error?: string }> {
   try {
+    if (!await verifyOrigin()) return { error: 'Request origin not allowed.' }
     const key = await getRateLimitKey()
     if (await checkRateLimit(key, 8, 60_000, true)) return { error: 'Too many requests — please wait a moment and try again.' }
 
@@ -192,6 +194,7 @@ export async function suggestSubstitutes(
   recipe: Recipe,
 ): Promise<{ result?: SubstitutesResult; error?: string }> {
   try {
+    if (!await verifyOrigin()) return { error: 'Request origin not allowed.' }
     const key = await getRateLimitKey()
     if (await checkRateLimit(key, 8, 60_000, true)) return { error: 'Too many requests — please wait a moment and try again.' }
 
@@ -222,6 +225,7 @@ export async function parseRecipeText(
   text: string,
 ): Promise<{ result?: ParsedRecipeResult; error?: string }> {
   try {
+    if (!await verifyOrigin()) return { error: 'Request origin not allowed.' }
     const key = await getRateLimitKey()
     if (await checkRateLimit(key, 8, 60_000, true)) return { error: 'Too many requests — please wait a moment and try again.' }
 
@@ -256,6 +260,7 @@ export async function checkPantryMatchBatch(
   }
 
   try {
+    if (!await verifyOrigin()) return { error: 'Request origin not allowed.' }
     const key = await getRateLimitKey()
     if (await checkRateLimit(key, 8, 60_000, true)) return { error: 'Too many requests — please wait a moment and try again.' }
 
@@ -301,6 +306,7 @@ export async function scoreRecipesByPantry(
   }
 
   try {
+    if (!await verifyOrigin()) return { error: 'Request origin not allowed.' }
     const key = await getRateLimitKey()
     if (await checkRateLimit(key, 8, 60_000, true)) return { error: 'Too many requests — please wait a moment and try again.' }
 

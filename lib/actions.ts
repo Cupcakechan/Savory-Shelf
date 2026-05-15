@@ -5,6 +5,7 @@ import { supabaseAdmin } from './supabase-admin'
 import { getRateLimitKey, checkRateLimit } from './rate-limit'
 import { secLog } from './sec-log'
 import { createSupabaseServerClient } from './supabase-server'
+import { verifyOrigin } from './verify-origin'
 import { promises as dns } from 'dns'
 
 // ── SSRF guard ────────────────────────────────────────────
@@ -211,6 +212,8 @@ export async function fetchRecipeImage(
   imageUrl: string,
   recipeId: string,
 ): Promise<{ url?: string }> {
+  if (!await verifyOrigin()) return {}
+
   // Auth check — service-role operations must only run for authenticated users
   const serverClient = await createSupabaseServerClient()
   const { data: { user } } = await serverClient.auth.getUser()
@@ -242,6 +245,8 @@ export async function fetchRecipeImage(
 export async function migrateRecipeImage(
   recipeId: string,
 ): Promise<{ url?: string }> {
+  if (!await verifyOrigin()) return {}
+
   // Auth check — must be an authenticated user
   const serverClient = await createSupabaseServerClient()
   const { data: { user } } = await serverClient.auth.getUser()
@@ -468,6 +473,10 @@ export async function importRecipe(
   if (!isSafeUrl(target)) {
     secLog('warn', { event: 'invalid_import_url', url: target })
     return { error: 'Please enter a valid https:// recipe URL from a public website.' }
+  }
+
+  if (!await verifyOrigin()) {
+    return { error: 'Request origin not allowed.' }
   }
 
   // Auth check — determines rate-limit tier and storage eligibility.
