@@ -100,12 +100,15 @@ function metricIngredient(text: string): string {
   // Number pattern: whole+fraction ("1 ½"), lone fraction ("½"), or decimal/int
   const A = '(\\d+\\s+[⅛¼⅓½⅔¾]|[⅛¼⅓½⅔¾]|\\d+(?:\\.\\d+)?)'
   const rules: [RegExp, number, string][] = [
-    [new RegExp(`${A}\\s*fl\\.?\\s*oz\\b`, 'gi'), 30,  'ml'],
-    [new RegExp(`${A}\\s*cups?\\b`,             'gi'), 240, 'ml'],
-    [new RegExp(`${A}\\s*(?:tbsp|tablespoons?)\\b`, 'gi'), 15,  'ml'],
-    [new RegExp(`${A}\\s*(?:tsp|teaspoons?)\\b`,    'gi'), 5,   'ml'],
-    [new RegExp(`${A}\\s*(?:lbs?|pounds?)\\b`,      'gi'), 454, 'g'],
-    [new RegExp(`${A}\\s*oz\\b`,                'gi'), 28,  'g'],
+    // (?![a-zA-Z0-9]) replaces \b so unit abbreviations match correctly
+    // even when immediately followed by non-ASCII characters (accented
+    // letters, CJK, etc.) in non-English recipe text.
+    [new RegExp(`${A}\\s*fl\\.?\\s*oz(?![a-zA-Z0-9])`, 'gi'), 30,  'ml'],
+    [new RegExp(`${A}\\s*cups?(?![a-zA-Z0-9])`,             'gi'), 240, 'ml'],
+    [new RegExp(`${A}\\s*(?:tbsp|tablespoons?)(?![a-zA-Z0-9])`, 'gi'), 15,  'ml'],
+    [new RegExp(`${A}\\s*(?:tsp|teaspoons?)(?![a-zA-Z0-9])`,    'gi'), 5,   'ml'],
+    [new RegExp(`${A}\\s*(?:lbs?|pounds?)(?![a-zA-Z0-9])`,      'gi'), 454, 'g'],
+    [new RegExp(`${A}\\s*oz(?![a-zA-Z0-9])`,                'gi'), 28,  'g'],
   ]
   for (const [regex, factor, unit] of rules) {
     text = text.replace(regex, (_, amt: string) => {
