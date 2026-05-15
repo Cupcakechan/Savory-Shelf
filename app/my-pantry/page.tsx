@@ -19,10 +19,16 @@ const LIST_COLUMNS =
 // Catches "chicken breast" ↔ "chicken", "olive oil" ↔ "oil", etc.
 // Synonym gaps (pasta ↔ spaghetti) are handled by Grok's score;
 // this only drives the "Missing: X" display, not the match %.
+
+// These basics are always assumed to be in every kitchen — never shown as missing.
+const ALWAYS_AVAILABLE = ['water', 'salt', 'pepper', 'sugar', 'oil']
+
 function computeMissing(ingredients: string[], pantry: string[]): string[] {
   const pantryLower = pantry.map(p => p.toLowerCase())
   return ingredients.filter(ing => {
     const ingLower = ing.toLowerCase()
+    // Skip universal staples (salt, water, pepper, sugar, any oil)
+    if (ALWAYS_AVAILABLE.some(s => ingLower.includes(s))) return false
     return !pantryLower.some(p => ingLower.includes(p) || p.includes(ingLower))
   })
 }
