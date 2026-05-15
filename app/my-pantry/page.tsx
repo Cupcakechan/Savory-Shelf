@@ -78,17 +78,23 @@ export default function MyPantryPage() {
     scoreTimer.current = setTimeout(async () => {
       setScoring(true)
       setScoringError('')
-      const { result, error } = await scoreRecipesByPantry(
-        recipes.map(r => ({ id: r.id, ingredients: r.ingredients })),
-        pantry,
-      )
-      if (result) {
-        setScores(result.scores)
-        setMissing(result.missing)
-      } else {
-        setScoringError(error ?? 'Could not score recipes — please try again.')
+      try {
+        const { result, error } = await scoreRecipesByPantry(
+          recipes.map(r => ({ id: r.id, ingredients: r.ingredients })),
+          pantry,
+        )
+        if (result) {
+          setScores(result.scores)
+          setMissing(result.missing)
+        } else {
+          setScoringError(error ?? 'Could not score recipes — please try again.')
+        }
+      } catch (e) {
+        setScoringError('Scoring timed out — please try again.')
+      } finally {
+        // Always clears the spinner — even if Grok hangs or throws
+        setScoring(false)
       }
-      setScoring(false)
     }, 800)
 
     return () => clearTimeout(scoreTimer.current)

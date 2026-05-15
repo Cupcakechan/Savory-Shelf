@@ -322,6 +322,7 @@ export async function scoreRecipesByPantry(
       model: getModel(),
       system: PANTRY_SCORE_SYSTEM,
       prompt,
+      abortSignal: AbortSignal.timeout(25_000),  // fail cleanly after 25 s
     })
 
     // Grok now returns { recipeId: { score: number, missing: string[] } }
