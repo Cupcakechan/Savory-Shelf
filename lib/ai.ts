@@ -23,7 +23,19 @@ function parseJson<T>(raw: string): T {
     .replace(/^```\s*/i, '')
     .replace(/```\s*$/i, '')
     .trim()
-  return JSON.parse(cleaned) as T
+  try {
+    return JSON.parse(cleaned) as T
+  } catch {
+    // Some model responses prepend/append short commentary despite JSON-only instructions.
+    // Recover by parsing the largest JSON object/array span in the payload.
+    const firstBrace = cleaned.search(/[\[{]/)
+    const lastBrace  = Math.max(cleaned.lastIndexOf('}'), cleaned.lastIndexOf(']'))
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      const candidate = cleaned.slice(firstBrace, lastBrace + 1)
+      return JSON.parse(candidate) as T
+    }
+    throw new Error('Model response was not valid JSON.')
+  }
 }
 
 // ── System prompts ────────────────────────────────────────
@@ -304,8 +316,11 @@ export async function scoreRecipesByPantry(
     const key = await getRateLimitKey()
     if (await checkRateLimit(key, 8, 60_000, true)) return { error: 'Too many requests — please wait a moment and try again.' }
 
+    // Cap at 15 recipes and 12 ingredients each to keep the prompt
+    // small enough for Grok to respond well within serverless time limits.
     const recipeList = recipes
-      .map(r => `- ${r.id} | ${r.ingredients.slice(0, 20).join(', ')}`)
+      .slice(0, 15)
+      .map(r => `- ${r.id} | ${r.ingredients.slice(0, 12).join(', ')}`)
       .join('\n')
 
     const prompt =
@@ -316,7 +331,6 @@ export async function scoreRecipesByPantry(
       model: getModel(),
       system: PANTRY_SCORE_SYSTEM,
       prompt,
-      abortSignal: AbortSignal.timeout(25_000),  // fail cleanly after 25 s
     })
 
     // Parse scores — Grok returns {"recipeId": 85} (plain numbers)
