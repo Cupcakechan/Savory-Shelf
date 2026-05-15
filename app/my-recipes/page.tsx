@@ -300,7 +300,7 @@ export default function MyRecipesPage() {
         <p className="text-xs text-muted leading-relaxed">
           <span className="text-accent font-semibold">Pantry tip —</span>{' '}
           Use the <span className="text-text font-medium">Pantry</span> tab to match recipes to what you already have at home.
-          It shows match % and missing ingredients — different from the search bar above.
+          It shows match % and missing ingredients — different from the search bar below.
         </p>
       </div>
 
