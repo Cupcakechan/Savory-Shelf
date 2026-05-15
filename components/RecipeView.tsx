@@ -69,6 +69,54 @@ function scaleIngredient(text: string, multiplier: number): string {
   )
 }
 
+// ── Unit conversion (US → Metric) ────────────────────────
+// Works on already-scaled text (output of scaleIngredient).
+// Handles integers, decimals, and unicode fractions (½ ¼ ⅓ etc.)
+
+const FRAC_VALUES: Record<string, number> = {
+  '⅛': 0.125, '¼': 0.25, '⅓': 0.333, '½': 0.5, '⅔': 0.667, '¾': 0.75,
+}
+
+function parseAmt(s: string): number {
+  s = s.trim()
+  if (FRAC_VALUES[s] !== undefined) return FRAC_VALUES[s]
+  for (const [sym, val] of Object.entries(FRAC_VALUES)) {
+    if (s.endsWith(sym)) {
+      const whole = parseInt(s.slice(0, -sym.length).trim(), 10)
+      if (!isNaN(whole)) return whole + val
+    }
+  }
+  return parseFloat(s) || 0
+}
+
+function formatMetricNum(n: number): string {
+  if (n <= 0) return '0'
+  if (n >= 100) return String(Math.round(n))
+  const rounded = Math.round(n * 10) / 10
+  return rounded % 1 === 0 ? String(rounded) : rounded.toFixed(1)
+}
+
+function metricIngredient(text: string): string {
+  // Number pattern: whole+fraction ("1 ½"), lone fraction ("½"), or decimal/int
+  const A = '(\\d+\\s+[⅛¼⅓½⅔¾]|[⅛¼⅓½⅔¾]|\\d+(?:\\.\\d+)?)'
+  const rules: [RegExp, number, string][] = [
+    [new RegExp(`${A}\\s*fl\\.?\\s*oz\\b`, 'gi'), 30,  'ml'],
+    [new RegExp(`${A}\\s*cups?\\b`,             'gi'), 240, 'ml'],
+    [new RegExp(`${A}\\s*(?:tbsp|tablespoons?)\\b`, 'gi'), 15,  'ml'],
+    [new RegExp(`${A}\\s*(?:tsp|teaspoons?)\\b`,    'gi'), 5,   'ml'],
+    [new RegExp(`${A}\\s*(?:lbs?|pounds?)\\b`,      'gi'), 454, 'g'],
+    [new RegExp(`${A}\\s*oz\\b`,                'gi'), 28,  'g'],
+  ]
+  for (const [regex, factor, unit] of rules) {
+    text = text.replace(regex, (_, amt: string) => {
+      const n = parseAmt(amt)
+      if (!n) return _
+      return `${formatMetricNum(n * factor)} ${unit}`
+    })
+  }
+  return text
+}
+
 // ── Share Modal ───────────────────────────────────────────
 
 function ShareModal({ url, onClose }: { url: string; onClose: () => void }) {
@@ -263,6 +311,7 @@ export default function RecipeView({
   const [translateApplied, setTranslateApplied] = useState(false)
   const [substitutesResult, setSubstitutesResult] = useState<SubstitutesResult | null>(null)
   const [substitutesCopied, setSubstitutesCopied] = useState(false)
+  const [unit, setUnitRaw] = useState<'us' | 'metric'>('us')
 
   const [tags, setTags]                 = useState<string[]>(initialRecipe.tags ?? [])
   const [userTags, setUserTags]         = useState<string[]>([])
@@ -339,6 +388,18 @@ export default function RecipeView({
   useEffect(() => {
     if (showTagInput) tagInputRef.current?.focus()
   }, [showTagInput])
+
+  // Load persisted unit preference
+  useEffect(() => {
+    try {
+      if (localStorage.getItem('savoryshelf-unit') === 'metric') setUnitRaw('metric')
+    } catch {}
+  }, [])
+
+  const setUnit = (u: 'us' | 'metric') => {
+    setUnitRaw(u)
+    try { localStorage.setItem('savoryshelf-unit', u) } catch {}
+  }
 
   const multiplier = servings / baseServings
 
@@ -513,13 +574,32 @@ export default function RecipeView({
           )}
         </div>
 
-        {(recipe.prepTime || recipe.cookTime || recipe.servings) && (
-          <div className="flex flex-wrap gap-2 mb-6">
+        <div className="flex items-center justify-between mb-6 gap-3">
+          <div className="flex flex-wrap gap-2">
             {recipe.prepTime && <Chip icon={<Clock size={13} />} label={`Prep ${formatTime(recipe.prepTime)}`} />}
             {recipe.cookTime && <Chip icon={<Clock size={13} />} label={`Cook ${formatTime(recipe.cookTime)}`} />}
             {recipe.servings && <Chip icon={<Users size={13} />} label={`${recipe.servings} servings`} />}
           </div>
-        )}
+          {/* Imperial ↔ Metric toggle */}
+          <div className="flex items-center gap-0.5 bg-surface border border-border rounded-xl p-1 flex-shrink-0">
+            <button
+              onClick={() => setUnit('us')}
+              className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-all touch-manipulation select-none ${
+                unit === 'us' ? 'bg-accent text-white shadow-sm' : 'text-muted hover:text-text'
+              }`}
+            >
+              US
+            </button>
+            <button
+              onClick={() => setUnit('metric')}
+              className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-all touch-manipulation select-none ${
+                unit === 'metric' ? 'bg-accent text-white shadow-sm' : 'text-muted hover:text-text'
+              }`}
+            >
+              Metric
+            </button>
+          </div>
+        </div>
 
         {/* Missing ingredients banner — only shown when opened from the Pantry page */}
         {missingIngredients && missingIngredients.length > 0 && (
@@ -652,7 +732,9 @@ export default function RecipeView({
                   {checked.has(i) && <Check size={10} className="text-white" strokeWidth={3.5} />}
                 </span>
                 <span className={`text-sm leading-relaxed ${checked.has(i) ? 'line-through text-muted' : 'text-text'}`}>
-                  {scaleIngredient(ing, multiplier)}
+                  {unit === 'metric'
+                    ? metricIngredient(scaleIngredient(ing, multiplier))
+                    : scaleIngredient(ing, multiplier)}
                 </span>
               </li>
             ))}
