@@ -781,9 +781,17 @@ export default function RecipeView({
         )}
 
         {recipe.sourceUrl && (
-          <a href={recipe.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-xs text-muted hover:text-accent transition-colors mt-2">
-            <ExternalLink size={12} />View original recipe
-          </a>
+          <div className="mt-2">
+            {!recipe.image && (
+              <p className="text-xs text-subtle leading-relaxed mb-2">
+                📷 Image missing — copy the link below and paste it into{' '}
+                <span className="text-muted font-medium">Import</span> to recover it.
+              </p>
+            )}
+            <a href={recipe.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-xs text-muted hover:text-accent transition-colors">
+              <ExternalLink size={12} />View original recipe
+            </a>
+          </div>
         )}
       </article>
 

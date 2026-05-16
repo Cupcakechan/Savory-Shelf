@@ -47,7 +47,14 @@ export default function RecipeCard({ recipe, onClick, onDelete, matchPercent, mi
               onError={() => setImgFailed(true)}
             />
           ) : (
-            <div className="w-full h-full flex items-center justify-center text-4xl select-none">🍽️</div>
+            <div className="w-full h-full flex flex-col items-center justify-center gap-1.5 select-none px-3 text-center">
+              <span className="text-3xl">🍽️</span>
+              {recipe.sourceUrl && (
+                <p className="text-[10px] text-subtle leading-snug">
+                  Re-import to recover image
+                </p>
+              )}
+            </div>
           )}
 
           {/* Match % badge (pantry matching page) */}
