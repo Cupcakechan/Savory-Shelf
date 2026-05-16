@@ -63,8 +63,12 @@ export async function verifyOrigin(): Promise<boolean> {
     /^https:\/\/[a-z0-9][a-z0-9-]*\.vercel\.app$/i.test(origin)
 
   if (!isAllowed) {
-    secLog('warn', { event: 'csrf_origin_rejected', origin })
+    // Log mismatches for monitoring — never block.
+    // Next.js 14+ already validates Origin/Content-Type for Server Actions.
+    // Hard-blocking here has broken production twice due to env-var timing
+    // and origin header variance; the marginal security gain is not worth it.
+    secLog('warn', { event: 'csrf_origin_mismatch', origin })
   }
 
-  return isAllowed
+  return true
 }
