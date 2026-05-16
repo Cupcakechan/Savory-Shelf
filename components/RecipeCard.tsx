@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Clock, Trash2 } from 'lucide-react'
 import { Recipe } from '@/lib/types'
 
@@ -29,6 +29,7 @@ function ingredientCount(recipe: Recipe): string {
 export default function RecipeCard({ recipe, onClick, onDelete, matchPercent, missingCount, showTags }: Props) {
   const count = ingredientCount(recipe)
   const [imgFailed, setImgFailed] = useState(false)
+  useEffect(() => { setImgFailed(false) }, [recipe.id])
 
   return (
     <div className="relative group">

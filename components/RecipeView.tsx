@@ -32,6 +32,18 @@ function formatTime(t: string | undefined): string {
   return t
 }
 
+/** Decode HTML entities that survive recipe scraping (e.g. &frac14; -> 1/4) */
+function decodeEntities(text: string): string {
+  return text
+    .replace(/&frac14;/gi, '¼').replace(/&frac12;/gi, '½').replace(/&frac34;/gi, '¾')
+    .replace(/&frac13;/gi, '⅓').replace(/&frac23;/gi, '⅔').replace(/&frac18;/gi, '⅛')
+    .replace(/&frac38;/gi, '⅜').replace(/&frac58;/gi, '⅝').replace(/&frac78;/gi, '⅞')
+    .replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"').replace(/&#39;/gi, "'").replace(/&nbsp;/gi, ' ')
+    .replace(/&#(\d+);/g, (_, c) => String.fromCharCode(parseInt(c, 10)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, c) => String.fromCharCode(parseInt(c, 16)))
+}
+
 function cleanTitle(title: string): string {
   return title
     .replace(/^\{[^}]+\}\s*/g, '')
@@ -360,17 +372,19 @@ export default function RecipeView({
 
   useEffect(() => {
     if (readOnly) return
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setUser(session?.user ?? null)
-      if (session?.user && !initialSaved) {
+    // getUser() makes a real network request — always reliable even when the
+    // client-side session cache hasn't been populated yet (e.g. first page load).
+    supabase.auth.getUser().then(async ({ data: { user: authUser } }) => {
+      setUser(authUser ?? null)
+      if (authUser && !initialSaved) {
         const { data } = await supabase.from('recipes').select('id').eq('id', recipe.id).maybeSingle()
         setSaved(!!data)
       }
-      if (session?.user) {
+      if (authUser) {
         const { data: tagRows } = await supabase
           .from('recipes')
           .select('tags')
-          .eq('user_id', session.user.id)
+          .eq('user_id', authUser.id)
         if (tagRows) {
           const flat = [
             ...new Set(
@@ -755,8 +769,8 @@ export default function RecipeView({
                 </span>
                 <span className={`text-sm leading-relaxed ${checked.has(i) ? 'line-through text-muted' : 'text-text'}`}>
                   {unit === 'metric'
-                    ? metricIngredient(scaleIngredient(ing, multiplier))
-                    : scaleIngredient(ing, multiplier)}
+                    ? metricIngredient(scaleIngredient(decodeEntities(ing), multiplier))
+                    : scaleIngredient(decodeEntities(ing), multiplier)}
                 </span>
               </li>
             ))}
@@ -768,7 +782,7 @@ export default function RecipeView({
             {recipe.instructions.map((step, i) => (
               <li key={i} className="flex gap-4">
                 <span className="flex-shrink-0 w-7 h-7 rounded-full bg-accent/15 text-accent text-xs font-bold flex items-center justify-center mt-0.5 border border-accent/20">{i + 1}</span>
-                <p className="text-sm leading-relaxed text-text pt-0.5">{step}</p>
+                <p className="text-sm leading-relaxed text-text pt-0.5">{decodeEntities(step)}</p>
               </li>
             ))}
           </ol>
