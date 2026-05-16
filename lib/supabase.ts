@@ -14,21 +14,22 @@ export const supabase = createBrowserClient(
 // Keeping this in sync with schema changes prevents silent mapping breaks.
 
 interface DbRecipe {
-  id:           string
-  user_id:      string
-  title:        string
-  image_url:    string | null
-  image_base64: string | null   // legacy — populated only on older rows
-  prep_time:    string | null
-  cook_time:    string | null
-  servings:     number | null
-  ingredients:  string[]
-  instructions: string[]
-  notes:        string | null
-  source_url:   string | null
-  created_at:   string | null
-  tags:         string[]
-  is_public:    boolean | null
+  id:            string
+  title:         string
+  image_url:     string | null
+  prep_time:     string | null
+  cook_time:     string | null
+  servings:      number | null
+  ingredients:   string[]
+  instructions:  string[]
+  notes:         string | null
+  source_url:    string | null
+  created_at:    string | null
+  tags:          string[]
+  // Optional — present on full select('*') but omitted in list queries
+  user_id?:      string
+  image_base64?: string | null   // legacy — populated only on older rows
+  is_public?:    boolean | null
 }
 
 // ── DB ↔ app type mappers ──────────────────────────────────
