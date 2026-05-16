@@ -57,7 +57,10 @@ export default function MyPantryPage() {
   // Recipe detail view
   const [selected, setSelected] = useState<Recipe | null>(null)
 
-  const scoreTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const scoreTimer   = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  // Incremented on every new scoring request; stale responses check against
+  // this before writing state so rapid pantry changes never cause stale overwrites.
+  const scoreVersion = useRef(0)
 
   // ── Auth + initial data load ──────────────────────────
 
@@ -95,6 +98,7 @@ export default function MyPantryPage() {
 
     clearTimeout(scoreTimer.current)
     scoreTimer.current = setTimeout(async () => {
+      const version = ++scoreVersion.current   // stamp this request
       setScoring(true)
       setScoringError('')
       try {
@@ -102,6 +106,8 @@ export default function MyPantryPage() {
           recipes.map(r => ({ id: r.id, ingredients: r.ingredients })),
           pantry,
         )
+        // Discard if a newer request has already started
+        if (scoreVersion.current !== version) return
         if (result) {
           setScores(result.scores)
           // Compute missing ingredients client-side from the pantry and
@@ -115,10 +121,11 @@ export default function MyPantryPage() {
           setScoringError(error ?? 'Could not score recipes — please try again.')
         }
       } catch (e) {
+        if (scoreVersion.current !== version) return
         setScoringError('Scoring timed out — please try again.')
       } finally {
-        // Always clears the spinner — even if Grok hangs or throws
-        setScoring(false)
+        // Only clear the spinner for the most recent request
+        if (scoreVersion.current === version) setScoring(false)
       }
     }, 800)
 

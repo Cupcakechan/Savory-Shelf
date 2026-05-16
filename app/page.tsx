@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Link2, Loader2, AlertCircle, ClipboardPaste, ChevronLeft, Sparkles } from 'lucide-react'
 import { importRecipe, fetchRecipeImage } from '@/lib/actions'
@@ -41,6 +41,11 @@ function ManualPasteForm({ onRecipe, onCancel, blockError }: ManualFormProps) {
   // as the recipe that will be created on submit.
   const [recipeId] = useState(() => crypto.randomUUID())
 
+  // Set to true when ManualPasteForm unmounts so the background
+  // fetchRecipeImage promise never calls setImage on a stale component.
+  const imageAborted = useRef(false)
+  useEffect(() => () => { imageAborted.current = true }, [])
+
   const handleParse = async () => {
     if (!rawText.trim()) return
     setParsing(true)
@@ -67,9 +72,10 @@ function ManualPasteForm({ onRecipe, onCancel, blockError }: ManualFormProps) {
 
     // If Grok found an image URL, upload to Storage in the background.
     // The image field updates silently when ready — no loading state needed.
+    // imageAborted guards against setImage firing after the form unmounts.
     if (result.imageUrl) {
       fetchRecipeImage(result.imageUrl, recipeId).then(({ url }) => {
-        if (url) setImage(url)
+        if (!imageAborted.current && url) setImage(url)
       })
     }
   }
