@@ -16,86 +16,41 @@ const EXAMPLE_URLS = [
 
 // ── HTML stripper ────────────────────────────────────────
 // Removes all HTML tags, attributes, and entities from pasted content.
-// Treats paste input as potentially hostile semi-structured text.
-// Runs a 9-stage pipeline: normalise → decode → strip → fragment-clean →
-// decode again → strip again → sweep → whitespace. This order ensures
-// encoded markup (&lt;div&gt;) is caught and that WP Recipe Maker tokens
-// are removed as fragments even when surrounding HTML structure is broken.
-
-function decodeHtmlEntities(t: string): string {
-  return t
-    .replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"').replace(/&apos;/gi, "'").replace(/&#39;/gi, "'")
+// Safe to run on plain text — the regexes are no-ops when no tags are present.
+function stripHtml(text: string): string {
+  return text
+    // ── Block-level removals ──────────────────────────────
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')
+    // ── Tag stripping (handles single-line and multi-line tags) ──
+    .replace(/<[^>]+>/g, ' ')
+    // ── Orphaned attribute text (WP Recipe Maker etc. pastes these as
+    //    literal text when tags span lines or selection clips mid-tag) ──
+    .replace(/\bclass=["'][^"'\n]*["']/g, '')         // class="..." or class='...'
+    .replace(/\bid=["'][^"'\n]*["']/g, '')
+    .replace(/\bstyle=["'][^"'\n]*["']/g, '')
+    .replace(/\bdata-[\w-]+=(?:"[^"\n]*"|'[^'\n]*'|[\w-]+)/g, '')
+    .replace(/\b\w[\w-]*=["'][^"'\n]*["']/g, '')     // catch-all attr="value"
+    // ── Noise-lexicon pass: remove lines containing known CMS/plugin tokens ──
+    // These lines are markup metadata, never culinary content.
+    .replace(/^[^\n]*\bwprm-[\w-]+\b[^\n]*$/gim, '')
+    .replace(/^[^\n]*\b(?:data-recipe|itemscope|itemtype|schema\.org)\b[^\n]*$/gim, '')
+    // ── Residual structural garbage ───────────────────────
+    .replace(/[\s>]*>(?=\s|$)/gm, ' ')               // orphaned >
+    .replace(/\{[^}]{1,120}\}/g, ' ')                 // leftover {JSON-like} blobs
+    // ── Entity decoding ───────────────────────────────────
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
     .replace(/&#(\d+);/g, (_, c) => String.fromCharCode(parseInt(c, 10)))
     .replace(/&#x([0-9a-fA-F]+);/g, (_, c) => String.fromCharCode(parseInt(c, 16)))
-}
-
-function stripHtml(raw: string): string {
-  let t = raw
-
-  // Stage 1 — pre-normalise: mobile/browser paste quirks
-  t = t
-    .replace(/[\u2018\u2019]/g, "'")          // curly single quotes
-    .replace(/[\u201c\u201d]/g, '"')           // curly double quotes
-    .replace(/\u00a0/g, ' ')                    // non-breaking space
-    .replace(/[\u200b\u200c\u200d\ufeff]/g, '') // zero-width chars
-
-  // Stage 2 — decode entities FIRST so encoded tags become real tags
-  // (&lt;div class="wprm-..."&gt; → <div class="wprm-...">) before stripping
-  t = decodeHtmlEntities(t)
-
-  // Stage 3 — remove block-level chrome (full content + tags)
-  t = t
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<head[\s\S]*?<\/head>/gi, ' ')
-    .replace(/<nav[\s\S]*?<\/nav>/gi, ' ')
-
-  // Stage 4 — strip all HTML tags
-  t = t.replace(/<[^>]+>/g, ' ')
-
-  // Stage 5 — fragment-level CMS/plugin token removal
-  // Works on broken/clipped clipboard paste where < > or quote pairs are
-  // absent. Replaces with a space to preserve word boundaries.
-  t = t
-    // class= (quoted and unquoted — captures WP class lists even without <>)
-    .replace(/\bclass\s*=\s*"[^"\n]*"/g, ' ')
-    .replace(/\bclass\s*=\s*'[^'\n]*'/g, ' ')
-    .replace(/\bclass\s*=\s*\S+/g, ' ')
-    // style= / id=
-    .replace(/\bstyle\s*=\s*(?:"[^"\n]*"|'[^'\n]*'|\S+)/g, ' ')
-    .replace(/\bid\s*=\s*(?:"[^"\n]*"|'[^'\n]*'|\S+)/g, ' ')
-    // data-* attributes (all forms)
-    .replace(/\bdata-[\w-]+\s*=\s*(?:"[^"\n]*"|'[^'\n]*'|\S+)/g, ' ')
-    .replace(/\bdata-[\w-]+\b/g, ' ')
-    // WP Recipe Maker token family — the primary bug source.
-    // `wprm-anything` is removed as a fragment regardless of surrounding context.
-    .replace(/\bwprm-[\w-]+/g, ' ')
-    // ARIA / schema markup tokens
-    .replace(/\baria-[\w-]+(?:\s*=\s*(?:"[^"\n]*"|'[^'\n]*'|\S+))?/g, ' ')
-    .replace(/\b(?:itemscope|itemprop|itemtype)(?:\s*=\s*(?:"[^"\n]*"|'[^'\n]*'|\S+))?/g, ' ')
-    // Catch-all: remaining attr="value" forms (HTML attrs never appear in recipes)
-    .replace(/\b[\w-]+=["'][^"'\n]{0,200}["']/g, ' ')
-
-  // Stage 6 — second entity decode: catches entities inside stripped attrs
-  t = decodeHtmlEntities(t)
-
-  // Stage 7 — second tag strip: catches encoded tags revealed by Stage 6
-  t = t.replace(/<[^>]+>/g, ' ')
-
-  // Stage 8 — sweep residual structural chars
-  t = t
-    .replace(/[<>]+/g, ' ')            // any remaining angle brackets
-    .replace(/\{[^}]{1,200}\}/g, ' ') // leftover {JSON/schema} blobs
-
-  // Stage 9 — whitespace normalisation
-  t = t
+    // ── Whitespace normalisation ──────────────────────────
     .replace(/[ \t]+/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
-
-  return t
 }
 
 // ── Manual paste form ─────────────────────────────────────
@@ -111,18 +66,6 @@ function ManualPasteForm({ onRecipe, onCancel, blockError }: ManualFormProps) {
   const [parsing, setParsing]   = useState(false)
   const [parseMsg, setParseMsg] = useState('')
   const [parsed, setParsed]     = useState(false)
-  const [cleaned, setCleaned]   = useState(false)
-
-  // True when the pasted text looks like it contains raw HTML junk
-  const isNoisy = rawText.length > 40 &&
-    /(?:<[a-z][^>\s]*[\s>]|class\s*=\s*["']|data-[\w-]+=|\bwprm-)/i.test(rawText)
-
-  const handleClean = () => {
-    const result = stripHtml(rawText)
-    setRawText(result)
-    setCleaned(true)
-    setTimeout(() => setCleaned(false), 2500)
-  }
 
   const [title, setTitle]                   = useState('')
   const [ingredientsText, setIngredients]   = useState('')
@@ -151,8 +94,8 @@ function ManualPasteForm({ onRecipe, onCancel, blockError }: ManualFormProps) {
     const trimmed = rawText.trim()
 
     // Strip any raw HTML the user may have copied along with the recipe text
-    const cleanedText = stripHtml(trimmed)
-    const { result, error } = await parseRecipeText(cleanedText)
+    const cleaned = stripHtml(trimmed)
+    const { result, error } = await parseRecipeText(cleaned)
     setParsing(false)
 
     if (error || !result) {
@@ -244,24 +187,6 @@ function ManualPasteForm({ onRecipe, onCancel, blockError }: ManualFormProps) {
             autoFocus={!blockError}
           />
         </div>
-
-        {/* Clean-up banner — shown when HTML junk is detected in the paste */}
-        {isNoisy && !cleaned && (
-          <div className="flex items-center gap-3 bg-amber-500/8 border border-amber-500/20 rounded-xl px-4 py-2.5">
-            <span className="text-xs text-amber-600 dark:text-amber-400 flex-1 leading-snug">
-              Looks like website formatting is mixed in.
-            </span>
-            <button
-              onClick={handleClean}
-              className="text-xs font-semibold text-amber-500 hover:text-amber-400 transition-colors whitespace-nowrap touch-manipulation"
-            >
-              Clean it up →
-            </button>
-          </div>
-        )}
-        {cleaned && (
-          <p className="text-xs text-emerald-500 font-medium">✓ Cleaned — ready to parse.</p>
-        )}
 
         <button
           onClick={handleParse}
