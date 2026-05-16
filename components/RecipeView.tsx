@@ -91,26 +91,50 @@ const FRAC_VALUES: Record<string, number> = {
 
 function parseAmt(s: string): number {
   s = s.trim()
+  // Unicode fraction alone: "½"
   if (FRAC_VALUES[s] !== undefined) return FRAC_VALUES[s]
+  // Whole + unicode fraction: "2 ½"
   for (const [sym, val] of Object.entries(FRAC_VALUES)) {
     if (s.endsWith(sym)) {
       const whole = parseInt(s.slice(0, -sym.length).trim(), 10)
       if (!isNaN(whole)) return whole + val
     }
   }
+  // Mixed number with slash fraction: "2 1/4" or "2 and 1/4"
+  const mixed = s.match(/^(\d+)\s+(?:and\s+)?(\d+)\/(\d+)$/)
+  if (mixed) return parseInt(mixed[1]) + parseInt(mixed[2]) / parseInt(mixed[3])
+  // Standalone slash fraction: "1/4", "3/4"
+  const slash = s.match(/^(\d+)\/(\d+)$/)
+  if (slash) return parseInt(slash[1]) / parseInt(slash[2])
+  // Decimal or plain integer
   return parseFloat(s) || 0
 }
 
 function formatMetricNum(n: number): string {
   if (n <= 0) return '0'
-  if (n >= 100) return String(Math.round(n))
-  const rounded = Math.round(n * 10) / 10
-  return rounded % 1 === 0 ? String(rounded) : rounded.toFixed(1)
+  let r: number
+  if (n <= 5) {
+    // Tiny (≤ 1 tsp): nearest 0.5 ml — keeps ¼ tsp as 1.5 ml, ½ tsp as 2.5 ml
+    r = Math.round(n * 2) / 2
+    return r % 1 === 0 ? String(r) : r.toFixed(1)
+  } else if (n < 30) {
+    // Tbsp range: nearest 1 ml
+    r = Math.round(n)
+  } else if (n < 100) {
+    // ¼–½ cup range: nearest 5 ml
+    r = Math.round(n / 5) * 5
+  } else {
+    // Cup+ and weight: nearest 10 ml / 10 g
+    r = Math.round(n / 10) * 10
+  }
+  return String(r)
 }
 
 function metricIngredient(text: string): string {
-  // Number pattern: whole+fraction ("1 ½"), lone fraction ("½"), or decimal/int
-  const A = '(\\d+\\s+[⅛¼⅓½⅔¾]|[⅛¼⅓½⅔¾]|\\d+(?:\\.\\d+)?)'
+  // Number pattern — ordered longest-match first so "2 and 1/4" and "2 1/4"
+  // are captured whole before the plain-integer alternative can steal "4".
+  // Without this ordering "2 and 1/4 cups" would match "4 cups" → 960 ml.
+  const A = '(\\d+\\s+(?:and\\s+)?\\d+\\/\\d+|\\d+\\/\\d+|\\d+\\s+[⅛¼⅓½⅔¾]|[⅛¼⅓½⅔¾]|\\d+(?:\\.\\d+)?)'
   const rules: [RegExp, number, string][] = [
     // (?![a-zA-Z0-9]) replaces \b so unit abbreviations match correctly
     // even when immediately followed by non-ASCII characters (accented
