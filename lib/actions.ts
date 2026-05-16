@@ -329,14 +329,16 @@ function cleanRecipeTitle(raw: string): string {
 
 function stripTags(html: string): string {
   return html
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s{2,}/g, ' ')
+    // Decode entities FIRST so encoded markup like &lt;div&gt; becomes a
+    // real tag that the next pass can strip rather than surviving as text.
     .replace(/&amp;/g, '&')
-    .replace(/&nbsp;/g, ' ')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ')
     .replace(/&#39;/g, "'")
     .replace(/&quot;/g, '"')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s{2,}/g, ' ')
     .trim()
 }
 
@@ -434,7 +436,10 @@ function extractHtmlFallback(html: string): Recipe {
     html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:image["']/i)?.[1]
 
   const ingMatches = html.match(
-    /class="[^"]*ingredient[^"]*"[^>]*>([\s\S]*?)<\/(?:li|span|p|div)>/gi,
+    // Anchored to <tagname so the full opening tag is in the match and
+    // stripTags can remove it. Without the anchor, class="..." text
+    // starts the match and survives stripTags because it has no leading <.
+    /<(?:li|span|p|div)[^>]*class="[^"]*ingredient[^"]*"[^>]*>([\s\S]*?)<\/(?:li|span|p|div)>/gi,
   ) ?? []
   const ingredients = ingMatches
     .map((m) => stripTags(m))
@@ -442,7 +447,7 @@ function extractHtmlFallback(html: string): Recipe {
     .slice(0, 40)
 
   const stepMatches = html.match(
-    /class="[^"]*(?:step|instruction|direction)[^"]*"[^>]*>([\s\S]*?)<\/(?:li|p|div)>/gi,
+    /<(?:li|p|div|span)[^>]*class="[^"]*(?:step|instruction|direction)[^"]*"[^>]*>([\s\S]*?)<\/(?:li|p|div|span)>/gi,
   ) ?? []
   const instructions = stepMatches
     .map((m) => stripTags(m))
