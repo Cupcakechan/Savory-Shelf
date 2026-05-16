@@ -552,7 +552,16 @@ export default function RecipeView({
         {recipe.image && (
           <div className="w-full aspect-[16/9] rounded-2xl overflow-hidden mt-6 mb-7 bg-surface">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={recipe.image} alt={recipe.title} className="w-full h-full object-cover" />
+            <img
+              src={recipe.image}
+              alt={recipe.title}
+              className="w-full h-full object-cover"
+              onError={e => {
+                // Hide the wrapper so no broken-image space remains
+                const wrap = e.currentTarget.parentElement
+                if (wrap) wrap.style.display = 'none'
+              }}
+            />
           </div>
         )}
 

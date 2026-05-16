@@ -52,7 +52,42 @@ function ManualPasteForm({ onRecipe, onCancel, blockError }: ManualFormProps) {
     setParseMsg('')
     setFormError('')
 
-    const { result, error } = await parseRecipeText(rawText)
+    const trimmed = rawText.trim()
+
+    // ── URL pasted: use the full import pipeline ──────────
+    // Especially useful on mobile where copying a URL is easier than
+    // copying page text. Feels different from the main Import button:
+    // fields are shown for review/edit before Preview is tapped.
+    if (/^https?:\/\//i.test(trimmed)) {
+      const { recipe: imported, error: importError } = await importRecipe(trimmed)
+      setParsing(false)
+      if (!imported) {
+        const blocked =
+          (importError ?? '').toLowerCase().includes('blocks') ||
+          (importError ?? '').toLowerCase().includes('prevents')
+        setParseMsg(
+          blocked
+            ? 'That site blocks direct import. Copy and paste the recipe text instead.'
+            : (importError ?? 'Could not import from that URL — try pasting the recipe text directly.')
+        )
+        setParsed(true)
+        return
+      }
+      setTitle(imported.title ?? '')
+      setIngredients((imported.ingredients ?? []).join('\n'))
+      setInstructions((imported.instructions ?? []).join('\n'))
+      setServings(imported.servings ? String(imported.servings) : '')
+      setPrepTime(imported.prepTime ?? '')
+      setCookTime(imported.cookTime ?? '')
+      // Use the already-uploaded Storage image URL if present
+      if (imported.image?.startsWith('https://')) setImage(imported.image)
+      setParsed(true)
+      setParseMsg('Imported from URL — review and edit below, then tap Preview.')
+      return
+    }
+
+    // ── Plain text: Grok parse flow (unchanged) ───────────
+    const { result, error } = await parseRecipeText(trimmed)
     setParsing(false)
 
     if (error || !result) {
@@ -138,7 +173,7 @@ function ManualPasteForm({ onRecipe, onCancel, blockError }: ManualFormProps) {
           <textarea
             value={rawText}
             onChange={e => setRawText(e.target.value)}
-            placeholder="Paste the recipe here — a full web page copy, a photo transcript, or just your own notes. Grok will extract the title, ingredients, and steps."
+            placeholder="Paste a recipe URL or any recipe text here — Grok will extract the title, ingredients, and steps."
             rows={7}
             className={`${fieldCls} resize-none leading-relaxed`}
             autoFocus={!blockError}

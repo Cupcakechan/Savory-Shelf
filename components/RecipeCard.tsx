@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Clock, Trash2 } from 'lucide-react'
 import { Recipe } from '@/lib/types'
 
@@ -27,6 +28,7 @@ function ingredientCount(recipe: Recipe): string {
 
 export default function RecipeCard({ recipe, onClick, onDelete, matchPercent, missingCount, showTags }: Props) {
   const count = ingredientCount(recipe)
+  const [imgFailed, setImgFailed] = useState(false)
 
   return (
     <div className="relative group">
@@ -36,12 +38,13 @@ export default function RecipeCard({ recipe, onClick, onDelete, matchPercent, mi
       >
         {/* Image */}
         <div className="aspect-[4/3] bg-border overflow-hidden relative">
-          {recipe.image ? (
+          {recipe.image && !imgFailed ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={recipe.image}
               alt={recipe.title}
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+              onError={() => setImgFailed(true)}
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-4xl select-none">🍽️</div>
