@@ -1,7 +1,13 @@
 export interface Recipe {
   id: string
   title: string
-  image?: string          // base64 data URL after import
+  /**
+   * Display-only image value — never persisted as base64.
+   * New recipes: a Supabase Storage `https://` URL uploaded at import time.
+   * Legacy recipes: a base64 data URL from older imports (migrated lazily).
+   * `toDbRecipe` writes only Storage URLs to `image_url`; base64 is ignored on save.
+   */
+  image?: string
   prepTime?: string
   cookTime?: string
   servings?: number

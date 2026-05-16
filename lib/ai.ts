@@ -4,6 +4,7 @@ import { generateText } from 'ai'
 import { createXai } from '@ai-sdk/xai'
 import type { Recipe } from './types'
 import { getRateLimitKey, checkRateLimit } from './rate-limit'
+import { RATE_POLICY } from './rate-limit-policy'
 import { verifyOrigin } from './verify-origin'
 import { secLog } from './sec-log'
 
@@ -171,7 +172,8 @@ export async function translateRecipe(
   try {
     if (!await verifyOrigin()) return { error: 'Request origin not allowed.' }
     const key = await getRateLimitKey()
-    if (await checkRateLimit(key, 8, 60_000, true)) return { error: 'Too many requests — please wait a moment and try again.' }
+    const ap = RATE_POLICY.AI
+    if (await checkRateLimit(key, ap.max, ap.windowMs, ap.strict)) return { error: 'Too many requests — please wait a moment and try again.' }
 
     const prompt =
       `Translate this recipe into English.\n\n` +
@@ -202,7 +204,8 @@ export async function suggestSubstitutes(
   try {
     if (!await verifyOrigin()) return { error: 'Request origin not allowed.' }
     const key = await getRateLimitKey()
-    if (await checkRateLimit(key, 8, 60_000, true)) return { error: 'Too many requests — please wait a moment and try again.' }
+    const ap = RATE_POLICY.AI
+    if (await checkRateLimit(key, ap.max, ap.windowMs, ap.strict)) return { error: 'Too many requests — please wait a moment and try again.' }
 
     const prompt =
       `Recipe: "${recipe.title}"\n\n` +
@@ -233,7 +236,8 @@ export async function parseRecipeText(
   try {
     if (!await verifyOrigin()) return { error: 'Request origin not allowed.' }
     const key = await getRateLimitKey()
-    if (await checkRateLimit(key, 8, 60_000, true)) return { error: 'Too many requests — please wait a moment and try again.' }
+    const ap = RATE_POLICY.AI
+    if (await checkRateLimit(key, ap.max, ap.windowMs, ap.strict)) return { error: 'Too many requests — please wait a moment and try again.' }
 
     const { text: raw } = await generateText({
       model: getModel(),
@@ -268,7 +272,8 @@ export async function checkPantryMatchBatch(
   try {
     if (!await verifyOrigin()) return { error: 'Request origin not allowed.' }
     const key = await getRateLimitKey()
-    if (await checkRateLimit(key, 8, 60_000, true)) return { error: 'Too many requests — please wait a moment and try again.' }
+    const ap = RATE_POLICY.AI
+    if (await checkRateLimit(key, ap.max, ap.windowMs, ap.strict)) return { error: 'Too many requests — please wait a moment and try again.' }
 
     const recipeList = recipes
       .map(r => `- ${r.id} | ${r.ingredients.slice(0, 20).join(', ')}`)
@@ -314,7 +319,8 @@ export async function scoreRecipesByPantry(
   try {
     if (!await verifyOrigin()) return { error: 'Request origin not allowed.' }
     const key = await getRateLimitKey()
-    if (await checkRateLimit(key, 8, 60_000, true)) return { error: 'Too many requests — please wait a moment and try again.' }
+    const ap = RATE_POLICY.AI
+    if (await checkRateLimit(key, ap.max, ap.windowMs, ap.strict)) return { error: 'Too many requests — please wait a moment and try again.' }
 
     // Cap at 15 recipes and 12 ingredients each to keep the prompt
     // small enough for Grok to respond well within serverless time limits.

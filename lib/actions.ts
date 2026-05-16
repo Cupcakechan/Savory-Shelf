@@ -3,6 +3,7 @@
 import { Recipe } from './types'
 import { supabaseAdmin } from './supabase-admin'
 import { getRateLimitKey, checkRateLimit } from './rate-limit'
+import { RATE_POLICY } from './rate-limit-policy'
 import { secLog } from './sec-log'
 import { createSupabaseServerClient } from './supabase-server'
 import { verifyOrigin } from './verify-origin'
@@ -230,7 +231,8 @@ export async function fetchRecipeImage(
   if (!owned) return {}
 
   const key = await getRateLimitKey(user.id)
-  if (await checkRateLimit(key, 10)) return {}   // silent fail — image is optional
+  const fp = RATE_POLICY.IMAGE_FETCH
+  if (await checkRateLimit(key, fp.max, fp.windowMs, fp.strict)) return {}   // silent fail — image is optional
   const url = await uploadImageToStorage(imageUrl, imageUrl, recipeId)
   return { url }
 }
@@ -492,8 +494,8 @@ export async function importRecipe(
   // fail open when the rate-limit backend is unavailable.
   // Anonymous callers get a tighter cap (5/min vs 10/min).
   const key = await getRateLimitKey(user?.id)
-  const rateMax = isAuthenticated ? 10 : 5
-  if (await checkRateLimit(key, rateMax, 60_000, true)) {
+  const policy = isAuthenticated ? RATE_POLICY.IMPORT_AUTHENTICATED : RATE_POLICY.IMPORT_ANONYMOUS
+  if (await checkRateLimit(key, policy.max, policy.windowMs, policy.strict)) {
     return { error: 'Too many import requests — please wait a minute and try again.' }
   }
 
