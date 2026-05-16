@@ -19,18 +19,26 @@ const EXAMPLE_URLS = [
 // Safe to run on plain text — the regexes are no-ops when no tags are present.
 function stripHtml(text: string): string {
   return text
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')   // drop <style> blocks
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')  // drop <script> blocks
-    .replace(/<[^>]+>/g, ' ')         // strip single-line tags
-    // WP Recipe Maker and similar plugins sometimes leave orphaned attribute
-    // text when tags span multiple lines or the clipboard includes partial markup.
-    // Strip the most common culprits explicitly:
-    .replace(/\s*class="[^"]*"/g, '')          // class="wprm-..." etc.
-    .replace(/\s*id="[^"]*"/g, '')             // id="..."
-    .replace(/\s*style="[^"]*"/g, '')          // style="..."
-    .replace(/\s*data-[\w-]+=(?:"[^"]*"|'[^']*'|[\w-]+)/g, '')  // data-*=...
-    .replace(/\s*\w[\w-]*="[^"]*"/g, '')      // any remaining attr="value"
-    .replace(/[\s>]*>(?=\s|$)/gm, ' ')        // orphaned closing > chars
+    // ── Block-level removals ──────────────────────────────
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')
+    // ── Tag stripping (handles single-line and multi-line tags) ──
+    .replace(/<[^>]+>/g, ' ')
+    // ── Orphaned attribute text (WP Recipe Maker etc. pastes these as
+    //    literal text when tags span lines or selection clips mid-tag) ──
+    .replace(/\bclass=["'][^"'\n]*["']/g, '')         // class="..." or class='...'
+    .replace(/\bid=["'][^"'\n]*["']/g, '')
+    .replace(/\bstyle=["'][^"'\n]*["']/g, '')
+    .replace(/\bdata-[\w-]+=(?:"[^"\n]*"|'[^'\n]*'|[\w-]+)/g, '')
+    .replace(/\b\w[\w-]*=["'][^"'\n]*["']/g, '')     // catch-all attr="value"
+    // ── Noise-lexicon pass: remove lines containing known CMS/plugin tokens ──
+    // These lines are markup metadata, never culinary content.
+    .replace(/^[^\n]*\bwprm-[\w-]+\b[^\n]*$/gim, '')
+    .replace(/^[^\n]*\b(?:data-recipe|itemscope|itemtype|schema\.org)\b[^\n]*$/gim, '')
+    // ── Residual structural garbage ───────────────────────
+    .replace(/[\s>]*>(?=\s|$)/gm, ' ')               // orphaned >
+    .replace(/\{[^}]{1,120}\}/g, ' ')                 // leftover {JSON-like} blobs
+    // ── Entity decoding ───────────────────────────────────
     .replace(/&nbsp;/gi, ' ')
     .replace(/&amp;/gi, '&')
     .replace(/&lt;/gi, '<')
@@ -39,8 +47,9 @@ function stripHtml(text: string): string {
     .replace(/&#39;/gi, "'")
     .replace(/&#(\d+);/g, (_, c) => String.fromCharCode(parseInt(c, 10)))
     .replace(/&#x([0-9a-fA-F]+);/g, (_, c) => String.fromCharCode(parseInt(c, 16)))
-    .replace(/[ \t]+/g, ' ')         // collapse horizontal whitespace
-    .replace(/\n{3,}/g, '\n\n')      // max two consecutive blank lines
+    // ── Whitespace normalisation ──────────────────────────
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
     .trim()
 }
 

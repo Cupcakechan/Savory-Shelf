@@ -92,6 +92,10 @@ Guidelines:
 - imageUrl: if the text contains a full, absolute image URL that represents the main recipe \
   photo (e.g. from an og:image tag, a src= attribute, or a clearly labelled photo URL), \
   return it as a string. Only return absolute URLs starting with https://. Otherwise null.
+- IMPORTANT: completely ignore any HTML/CSS markup, class names, data attributes, plugin \
+  identifiers (e.g. strings containing "wprm-", "data-recipe", "aria-", "schema", "itemtype"), \
+  and website chrome (navigation, footers, ads, cookie banners). \
+  Extract ONLY food and cooking information. If a line looks like markup, skip it.
 
 Return ONLY a valid JSON object — no markdown, no code fences, no commentary outside the JSON:
 {"title":"...","ingredients":["..."],"instructions":["..."],"servings":null,"prepTime":null,"cookTime":null,"imageUrl":null}`
@@ -229,6 +233,24 @@ export async function suggestSubstitutes(
   }
 }
 
+/**
+ * Prioritise the recipe-dense section of the text before truncating.
+ * Keeps the first 400 chars (title/description) then jumps to the first
+ * ingredient or instruction heading so noisy page chrome before the
+ * recipe does not consume the 8 000-char token budget.
+ */
+function prioritiseRecipeContent(text: string, limit = 8000): string {
+  if (text.length <= limit) return text
+  const sectionRe = /\b(?:ingredients?|instructions?|method|directions?|how to (?:make|cook|prepare))\b/i
+  const match = sectionRe.exec(text)
+  if (match && match.index > 400) {
+    const head = text.slice(0, 400)       // keep title / intro
+    const body = text.slice(match.index)  // skip noisy page chrome
+    return (head + '\n\n' + body).slice(0, limit)
+  }
+  return text.slice(0, limit)
+}
+
 /** Extract structured recipe fields from raw pasted text using Grok. */
 export async function parseRecipeText(
   text: string,
@@ -242,7 +264,7 @@ export async function parseRecipeText(
     const { text: raw } = await generateText({
       model: getModel(),
       system: PARSE_RECIPE_SYSTEM,
-      prompt: `Extract the recipe from this text:\n\n${text.slice(0, 8000)}`,
+      prompt: `Extract the recipe from this text:\n\n${prioritiseRecipeContent(text)}`,
     })
 
     return { result: parseJson<ParsedRecipeResult>(raw) }
