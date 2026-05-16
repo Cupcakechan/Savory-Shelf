@@ -14,6 +14,27 @@ const EXAMPLE_URLS = [
   'https://www.bonappetit.com/recipe/…',
 ]
 
+// ── HTML stripper ────────────────────────────────────────
+// Removes all HTML tags, attributes, and entities from pasted content.
+// Safe to run on plain text — the regexes are no-ops when no tags are present.
+function stripHtml(text: string): string {
+  return text
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')  // drop <style> blocks
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ') // drop <script> blocks
+    .replace(/<[^>]+>/g, ' ')        // strip all remaining tags
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&#(\d+);/g, (_, c) => String.fromCharCode(parseInt(c, 10)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, c) => String.fromCharCode(parseInt(c, 16)))
+    .replace(/[ \t]+/g, ' ')        // collapse horizontal whitespace
+    .replace(/\n{3,}/g, '\n\n')     // max two consecutive blank lines
+    .trim()
+}
+
 // ── Manual paste form ─────────────────────────────────────
 
 interface ManualFormProps {
@@ -54,7 +75,9 @@ function ManualPasteForm({ onRecipe, onCancel, blockError }: ManualFormProps) {
 
     const trimmed = rawText.trim()
 
-    const { result, error } = await parseRecipeText(trimmed)
+    // Strip any raw HTML the user may have copied along with the recipe text
+    const cleaned = stripHtml(trimmed)
+    const { result, error } = await parseRecipeText(cleaned)
     setParsing(false)
 
     if (error || !result) {
