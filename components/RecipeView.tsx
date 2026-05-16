@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import {
   Clock, Users, Check, Bookmark, BookmarkCheck, ChevronLeft,
   ExternalLink, NotebookPen, Share2, Minus, Plus, Languages,
@@ -376,15 +376,16 @@ export default function RecipeView({
     // client-side session cache hasn't been populated yet (e.g. first page load).
     supabase.auth.getUser().then(async ({ data: { user: authUser } }) => {
       setUser(authUser ?? null)
-      if (authUser && !initialSaved) {
-        const { data } = await supabase.from('recipes').select('id').eq('id', recipe.id).maybeSingle()
-        setSaved(!!data)
-      }
       if (authUser) {
-        const { data: tagRows } = await supabase
-          .from('recipes')
-          .select('tags')
-          .eq('user_id', authUser.id)
+        // Run saved-check and tag aggregation in parallel — halves round-trip count
+        const [savedResult, tagsResult] = await Promise.all([
+          initialSaved
+            ? Promise.resolve({ data: null })
+            : supabase.from('recipes').select('id').eq('id', recipe.id).maybeSingle(),
+          supabase.from('recipes').select('tags').eq('user_id', authUser.id),
+        ])
+        if (!initialSaved) setSaved(!!(savedResult as { data: unknown }).data)
+        const tagRows = tagsResult.data
         if (tagRows) {
           const flat = [
             ...new Set(
@@ -419,6 +420,19 @@ export default function RecipeView({
   }
 
   const multiplier = servings / baseServings
+
+  // Memoise expensive per-ingredient transformations so they only recompute
+  // when ingredients, multiplier, or unit actually change — not on every
+  // checkbox toggle, state update, or unrelated re-render.
+  const processedIngredients = useMemo(
+    () => recipe.ingredients.map(ing =>
+      unit === 'metric'
+        ? metricIngredient(scaleIngredient(decodeEntities(ing), multiplier))
+        : scaleIngredient(decodeEntities(ing), multiplier)
+    ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [recipe.ingredients, multiplier, unit],
+  )
 
   const toggleCheck = (i: number) =>
     setChecked(prev => { const next = new Set(prev); next.has(i) ? next.delete(i) : next.add(i); return next })
@@ -762,15 +776,13 @@ export default function RecipeView({
           ) : undefined}
         >
           <ul className="space-y-1">
-            {recipe.ingredients.map((ing, i) => (
+            {processedIngredients.map((display, i) => (
               <li key={i} onClick={() => toggleCheck(i)} className={`flex items-start gap-3 px-3 py-3 sm:py-2.5 rounded-xl cursor-pointer select-none transition-all ${checked.has(i) ? 'opacity-40' : 'hover:bg-surface active:scale-[.99]'}`}>
                 <span className={`mt-0.5 w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-colors ${checked.has(i) ? 'bg-accent border-accent' : 'border-border'}`}>
                   {checked.has(i) && <Check size={10} className="text-white" strokeWidth={3.5} />}
                 </span>
                 <span className={`text-sm leading-relaxed ${checked.has(i) ? 'line-through text-muted' : 'text-text'}`}>
-                  {unit === 'metric'
-                    ? metricIngredient(scaleIngredient(decodeEntities(ing), multiplier))
-                    : scaleIngredient(decodeEntities(ing), multiplier)}
+                  {display}
                 </span>
               </li>
             ))}

@@ -57,10 +57,14 @@ export default function MyPantryPage() {
   // Recipe detail view
   const [selected, setSelected] = useState<Recipe | null>(null)
 
-  const scoreTimer   = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const scoreTimer             = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const writeTimer             = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   // Incremented on every new scoring request; stale responses check against
   // this before writing state so rapid pantry changes never cause stale overwrites.
-  const scoreVersion = useRef(0)
+  const scoreVersion           = useRef(0)
+  // Tracks the pantry fingerprint of the last completed Grok score run.
+  // If pantry hasn't changed since last score, we skip the Grok call entirely.
+  const lastScoredFingerprint  = useRef('')
 
   // ── Auth + initial data load ──────────────────────────
 
@@ -97,7 +101,10 @@ export default function MyPantryPage() {
     if (recipes.length === 0) return
 
     clearTimeout(scoreTimer.current)
+    const fingerprint = [...pantry].sort().join('|')
     scoreTimer.current = setTimeout(async () => {
+      // Skip Grok entirely if the pantry hasn't changed since we last scored
+      if (fingerprint === lastScoredFingerprint.current && Object.keys(scores).length > 0) return
       const version = ++scoreVersion.current   // stamp this request
       setScoring(true)
       setScoringError('')
@@ -109,6 +116,7 @@ export default function MyPantryPage() {
         // Discard if a newer request has already started
         if (scoreVersion.current !== version) return
         if (result) {
+          lastScoredFingerprint.current = fingerprint
           setScores(result.scores)
           // Compute missing ingredients client-side from the pantry and
           // each recipe's ingredient list — fast, no extra API call needed.
@@ -147,7 +155,12 @@ export default function MyPantryPage() {
   const persistPantry = (next: string[]) => {
     if (!user) return
     try { sessionStorage.setItem('savoryshelf-pantry', JSON.stringify(next)) } catch {}
-    supabase.from('pantry').upsert({ user_id: user.id, staples: next, match_cache: {} })
+    // Debounce Supabase writes — UI is already updated optimistically above.
+    // This coalesces rapid add/remove bursts into a single DB round trip.
+    clearTimeout(writeTimer.current)
+    writeTimer.current = setTimeout(() => {
+      supabase.from('pantry').upsert({ user_id: user.id, staples: next, match_cache: {} })
+    }, 1_000)
   }
 
   // ── Add ingredients ───────────────────────────────────
@@ -213,7 +226,9 @@ export default function MyPantryPage() {
   }
 
   const hasScored   = Object.keys(scores).length > 0
-  const showGrid    = !scoring && hasScored && matchingRecipes.length > 0
+  // Keep the grid visible while re-scoring — users see stale results with a
+  // subtle "Updating…" indicator instead of a blank/jumpy loading state.
+  const showGrid    = hasScored && matchingRecipes.length > 0
   const showNoMatch = !scoring && hasScored && matchingRecipes.length === 0
 
   return (
@@ -380,21 +395,29 @@ export default function MyPantryPage() {
             </div>
           )}
 
-          {/* Recipe grid */}
+          {/* Recipe grid — stays visible while re-scoring (shows stale results) */}
           {showGrid && (
-            <div className="grid grid-cols-2 gap-4">
-              {matchingRecipes.map(r => (
-                <RecipeCard
-                  key={r.id}
-                  recipe={r}
-                  onClick={() => setSelected(r)}
-                  onDelete={handleDelete}
-                  matchPercent={scores[r.id]}
-                  missingCount={(missing[r.id] ?? []).length}
-                  showTags
-                />
-              ))}
-            </div>
+            <>
+              {scoring && (
+                <div className="flex items-center gap-2 mb-3">
+                  <Loader2 size={13} className="text-accent animate-spin flex-shrink-0" />
+                  <span className="text-xs text-muted">Updating matches…</span>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-4">
+                {matchingRecipes.map(r => (
+                  <RecipeCard
+                    key={r.id}
+                    recipe={r}
+                    onClick={() => setSelected(r)}
+                    onDelete={handleDelete}
+                    matchPercent={scores[r.id]}
+                    missingCount={(missing[r.id] ?? []).length}
+                    showTags
+                  />
+                ))}
+              </div>
+            </>
           )}
         </>
       )}

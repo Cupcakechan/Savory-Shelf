@@ -57,6 +57,8 @@ export default function MyRecipesPage() {
   const [loading, setLoading]             = useState(true)
   const [activeTag, setActiveTag]         = useState<string>('all')
   const [search, setSearch]               = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+
   const [pantry, setPantry]               = useState<string[]>([])
   const [pantryCache, setPantryCache]     = useState<PantryCache | null>(null)
   const [pantryMatches, setPantryMatches] = useState<Record<string, boolean>>({})
@@ -194,6 +196,12 @@ export default function MyRecipesPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Debounce search so the haystack isn't rebuilt on every keystroke
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300)
+    return () => clearTimeout(t)
+  }, [search])
+
   const pantryFingerprint = useMemo(() => [...pantry].sort().join('|'), [pantry])
   useEffect(() => {
     if (!user || pantry.length === 0 || recipes.length === 0) return
@@ -218,7 +226,7 @@ export default function MyRecipesPage() {
   )
 
   const displayedRecipes = useMemo(() => {
-    const terms = search.split(/[\s,]+/).map(t => t.trim().toLowerCase()).filter(Boolean)
+    const terms = debouncedSearch.split(/[\s,]+/).map(t => t.trim().toLowerCase()).filter(Boolean)
     if (terms.length === 0) return tagFilteredRecipes
     return tagFilteredRecipes.filter(r => {
       const haystack = [r.title, ...r.ingredients].join(' ').toLowerCase()
