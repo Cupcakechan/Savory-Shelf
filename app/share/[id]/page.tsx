@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import Link from 'next/link'
 import { ChefHat } from 'lucide-react'
-import { fromDbRecipe } from '@/lib/supabase'
+import { fromDbRecipe, type DbRecipe } from '@/lib/supabase'
 import RecipeView from '@/components/RecipeView'
 
 export default async function SharePage({
@@ -44,5 +44,5 @@ export default async function SharePage({
     )
   }
 
-  return <RecipeView recipe={fromDbRecipe(data)} readOnly={true} />
+  return <RecipeView recipe={fromDbRecipe(data as DbRecipe)} readOnly={true} />
 }

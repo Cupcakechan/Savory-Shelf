@@ -13,7 +13,7 @@ export const supabase = createBrowserClient(
 // Mirrors the exact shape Supabase returns for the `recipes` table.
 // Keeping this in sync with schema changes prevents silent mapping breaks.
 
-interface DbRecipe {
+export interface DbRecipe {
   id:            string
   title:         string
   image_url:     string | null
