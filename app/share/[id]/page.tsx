@@ -44,5 +44,5 @@ export default async function SharePage({
     )
   }
 
-  return <RecipeView recipe={fromDbRecipe(data as DbRecipe)} readOnly={true} />
+  return <RecipeView recipe={fromDbRecipe(data as unknown as DbRecipe)} readOnly={true} />
 }
