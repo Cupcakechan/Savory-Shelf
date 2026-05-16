@@ -237,8 +237,8 @@ export default function MyRecipesPage() {
   // ── Handlers ─────────────────────────────────────────────
 
   const handleDelete = async (id: string) => {
+    setRecipes(prev => prev.filter(r => r.id !== id))  // optimistic — remove immediately
     await supabase.from('recipes').delete().eq('id', id)
-    setRecipes(prev => prev.filter(r => r.id !== id))
   }
 
   const handleBack = () => {

@@ -447,11 +447,11 @@ export default function RecipeView({
     if (!currentUser) { setShowAuth(true); return }
 
     if (saved) {
+      setSaved(false)   // optimistic — UI responds instantly
       await supabase.from('recipes').delete().eq('id', recipe.id)
-      setSaved(false)
     } else {
+      setSaved(true)    // optimistic — UI responds instantly
       await supabase.from('recipes').insert(toDbRecipe(recipe, currentUser.id))
-      setSaved(true)
     }
   }
 

@@ -19,9 +19,18 @@ const EXAMPLE_URLS = [
 // Safe to run on plain text — the regexes are no-ops when no tags are present.
 function stripHtml(text: string): string {
   return text
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')  // drop <style> blocks
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ') // drop <script> blocks
-    .replace(/<[^>]+>/g, ' ')        // strip all remaining tags
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')   // drop <style> blocks
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')  // drop <script> blocks
+    .replace(/<[^>]+>/g, ' ')         // strip single-line tags
+    // WP Recipe Maker and similar plugins sometimes leave orphaned attribute
+    // text when tags span multiple lines or the clipboard includes partial markup.
+    // Strip the most common culprits explicitly:
+    .replace(/\s*class="[^"]*"/g, '')          // class="wprm-..." etc.
+    .replace(/\s*id="[^"]*"/g, '')             // id="..."
+    .replace(/\s*style="[^"]*"/g, '')          // style="..."
+    .replace(/\s*data-[\w-]+=(?:"[^"]*"|'[^']*'|[\w-]+)/g, '')  // data-*=...
+    .replace(/\s*\w[\w-]*="[^"]*"/g, '')      // any remaining attr="value"
+    .replace(/[\s>]*>(?=\s|$)/gm, ' ')        // orphaned closing > chars
     .replace(/&nbsp;/gi, ' ')
     .replace(/&amp;/gi, '&')
     .replace(/&lt;/gi, '<')
@@ -30,8 +39,8 @@ function stripHtml(text: string): string {
     .replace(/&#39;/gi, "'")
     .replace(/&#(\d+);/g, (_, c) => String.fromCharCode(parseInt(c, 10)))
     .replace(/&#x([0-9a-fA-F]+);/g, (_, c) => String.fromCharCode(parseInt(c, 16)))
-    .replace(/[ \t]+/g, ' ')        // collapse horizontal whitespace
-    .replace(/\n{3,}/g, '\n\n')     // max two consecutive blank lines
+    .replace(/[ \t]+/g, ' ')         // collapse horizontal whitespace
+    .replace(/\n{3,}/g, '\n\n')      // max two consecutive blank lines
     .trim()
 }
 
