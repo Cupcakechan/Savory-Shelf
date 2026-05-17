@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import {
   Clock, Users, Check, Bookmark, BookmarkCheck, ChevronLeft,
   ExternalLink, NotebookPen, Share2, Minus, Plus, Languages,
-  Sparkles, X, CheckCircle, Tag,
+  Sparkles, X, CheckCircle, Tag, Loader2,
 } from 'lucide-react'
 import type { User } from '@supabase/supabase-js'
 import { Recipe } from '@/lib/types'
@@ -339,6 +339,7 @@ export default function RecipeView({
   const [servings, setServings]           = useState(baseServings)
   const [checked, setChecked]             = useState<Set<number>>(new Set())
   const [saved, setSaved]                 = useState(initialSaved)
+  const [savePending, setSavePending]     = useState(false)
   const [user, setUser]                   = useState<User | null>(null)
   const [showNotes, setShowNotes]         = useState(false)
   const [showShare, setShowShare]         = useState(false)
@@ -472,18 +473,36 @@ export default function RecipeView({
   const toggleCheck = (i: number) =>
     setChecked(prev => { const next = new Set(prev); next.has(i) ? next.delete(i) : next.add(i); return next })
 
+  // Patient auth resolution — handles the post-mount hydration window where
+  // `user` state may still be null even though a valid session exists. Up to
+  // 3 attempts with brief backoff between them. Most calls resolve on the
+  // first try; the retry only matters in the narrow window right after a
+  // fresh import on a recently-loaded tab.
+  const resolveUser = async (): Promise<User | null> => {
+    let result = user
+    for (let i = 0; i < 3 && !result; i++) {
+      if (i > 0) await new Promise(r => setTimeout(r, 400))
+      const { data: { user: fresh } } = await supabase.auth.getUser()
+      result = fresh ?? null
+    }
+    if (result) setUser(result)
+    return result
+  }
+
   const toggleSave = async () => {
+    if (savePending) return  // ignore taps while a previous tap is still resolving
+
     // Mark that the user has taken an explicit save action — the mount-time
     // saved-check (above) must no longer be allowed to overwrite local state.
     hasUserActedRef.current = true
+    setSavePending(true)
 
-    let currentUser = user
+    const currentUser = await resolveUser()
     if (!currentUser) {
-      const { data: { user: freshUser } } = await supabase.auth.getUser()
-      currentUser = freshUser ?? null
-      if (currentUser) setUser(currentUser)
+      setSavePending(false)
+      setShowAuth(true)
+      return
     }
-    if (!currentUser) { setShowAuth(true); return }
 
     if (saved) {
       setSaved(false)   // optimistic — UI responds instantly
@@ -501,19 +520,18 @@ export default function RecipeView({
         console.error('[savoryshelf] save failed:', error.message)
       }
     }
+
+    setSavePending(false)
   }
 
   const handleShare = async () => {
     // Share also performs a save when the recipe isn't yet in the user's
-    // collection — same race-vs-saved-check concern as toggleSave.
+    // collection — same race-vs-saved-check concern as toggleSave. Uses the
+    // shared resolveUser helper so a fresh-import share tap doesn't get
+    // silently dropped during the auth-hydration window.
     hasUserActedRef.current = true
 
-    let currentUser = user
-    if (!currentUser) {
-      const { data: { user: freshUser } } = await supabase.auth.getUser()
-      currentUser = freshUser ?? null
-      if (currentUser) setUser(currentUser)
-    }
+    const currentUser = await resolveUser()
     if (!currentUser) { setShowAuth(true); return }
 
     if (!saved) {
@@ -657,10 +675,16 @@ export default function RecipeView({
               </button>
               <button
                 onClick={toggleSave}
-                title={saved ? 'Remove from My Recipes' : 'Save to My Recipes'}
+                disabled={savePending}
+                title={savePending ? 'Saving…' : saved ? 'Remove from My Recipes' : 'Save to My Recipes'}
+                aria-label={savePending ? 'Saving…' : saved ? 'Remove from My Recipes' : 'Save to My Recipes'}
                 className={`p-3 sm:p-2.5 rounded-xl border transition-all ${saved ? 'bg-accent border-accent text-white' : 'border-border text-muted hover:border-accent hover:text-accent'}`}
               >
-                {saved ? <BookmarkCheck size={16} /> : <Bookmark size={16} />}
+                {savePending
+                  ? <Loader2 size={16} className="animate-spin" />
+                  : saved
+                    ? <BookmarkCheck size={16} />
+                    : <Bookmark size={16} />}
               </button>
             </div>
           )}
