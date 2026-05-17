@@ -78,6 +78,9 @@ export default function MyRecipesPage() {
       .from('recipes')
       .select(LIST_COLUMNS)
       .order('created_at', { ascending: false })
+      // Safety cap — grid is unpaginated; users beyond this exit design scope.
+      // Newest 500 win because of the order above.
+      .limit(500)
     const loaded = data ? data.map(fromDbRecipe) : []
     setRecipes(loaded)
     return loaded

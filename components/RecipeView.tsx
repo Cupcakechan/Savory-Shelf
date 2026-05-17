@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import {
   Clock, Users, Check, Bookmark, BookmarkCheck, ChevronLeft,
   ExternalLink, NotebookPen, Share2, Minus, Plus, Languages,
-  Sparkles, X, CheckCircle, Tag, ShoppingCart,
+  Sparkles, X, CheckCircle, Tag,
 } from 'lucide-react'
 import type { User } from '@supabase/supabase-js'
 import { Recipe } from '@/lib/types'
@@ -16,7 +16,6 @@ import {
 import { migrateRecipeImage } from '@/lib/actions'
 import KitchenNotesModal from './KitchenNotesModal'
 import AuthModal from './AuthModal'
-import AddToListModal from './AddToListModal'
 
 // ── Time formatter ────────────────────────────────────────
 
@@ -151,7 +150,7 @@ function metricIngredient(text: string): string {
     text = text.replace(regex, (_, amt: string) => {
       const n = parseAmt(amt)
       if (!n) return _
-      return `${formatMetricNum(n * factor)} ${unit}`
+      return `${formatMetricNum(n * factor)} ${unit}`
     })
   }
   return text
@@ -353,15 +352,6 @@ export default function RecipeView({
   const [substitutesCopied, setSubstitutesCopied] = useState(false)
   const [unit, setUnitRaw] = useState<'us' | 'metric'>('us')
 
-  // ── Shopping Mode state ──────────────────────────────
-  // Independent of `checked` (cross-off state) — entering shopping mode
-  // does NOT clear or affect what the user has crossed off. Exiting the
-  // mode preserves any selections so they can re-enter and resume.
-  const [shoppingMode, setShoppingMode]         = useState(false)
-  const [selectedForList, setSelectedForList]   = useState<Set<number>>(new Set())
-  const [showAddToList, setShowAddToList]       = useState(false)
-  const [toastList, setToastList]               = useState('')
-
   const [tags, setTags]                 = useState<string[]>(initialRecipe.tags ?? [])
   const [userTags, setUserTags]         = useState<string[]>([])
   const [showTagInput, setShowTagInput] = useState(false)
@@ -416,7 +406,9 @@ export default function RecipeView({
           initialSaved
             ? Promise.resolve({ data: null })
             : supabase.from('recipes').select('id').eq('id', recipe.id).maybeSingle(),
-          supabase.from('recipes').select('tags').eq('user_id', authUser.id),
+          // Tags-only column is small; the 2000 cap is purely defensive.
+          // Order makes the truncation deterministic (newest tags surface first).
+          supabase.from('recipes').select('tags').eq('user_id', authUser.id).order('created_at', { ascending: false }).limit(2000),
         ])
         if (!initialSaved) setSaved(!!(savedResult as { data: unknown }).data)
         const tagRows = tagsResult.data
@@ -470,40 +462,6 @@ export default function RecipeView({
 
   const toggleCheck = (i: number) =>
     setChecked(prev => { const next = new Set(prev); next.has(i) ? next.delete(i) : next.add(i); return next })
-
-  // ── Shopping Mode handlers ────────────────────────────
-
-  const toggleSelection = (i: number) =>
-    setSelectedForList(prev => { const next = new Set(prev); next.has(i) ? next.delete(i) : next.add(i); return next })
-
-  // Single click handler that dispatches to the right mode. Cross-off and
-  // shopping-list selection are mutually exclusive interactions.
-  const handleLiClick = (i: number) =>
-    shoppingMode ? toggleSelection(i) : toggleCheck(i)
-
-  // Toggling out of shopping mode clears the selection so the next entry
-  // into the mode starts clean. Cross-off state is untouched.
-  const toggleShoppingMode = () => {
-    setShoppingMode(prev => {
-      if (prev) setSelectedForList(new Set())
-      return !prev
-    })
-  }
-
-  const handleAdded = (listName: string) => {
-    setShowAddToList(false)
-    setShoppingMode(false)
-    setSelectedForList(new Set())
-    setToastList(listName)
-    setTimeout(() => setToastList(''), 2200)
-  }
-
-  // Ingredients passed to AddToListModal are the scaled / unit-converted
-  // strings the user actually sees on screen — not the raw recipe data.
-  const ingredientsToAdd = useMemo(
-    () => Array.from(selectedForList).sort((a, b) => a - b).map(i => processedIngredients[i]),
-    [selectedForList, processedIngredients],
-  )
 
   const toggleSave = async () => {
     let currentUser = user
@@ -834,59 +792,26 @@ export default function RecipeView({
 
         <Section
           title="Ingredients"
-          action={
-            <div className="flex items-center gap-2">
-              {/* Uncheck-all is only relevant when out of shopping mode and crossed-off items exist */}
-              {!shoppingMode && checked.size > 0 && (
-                <button
-                  onClick={() => setChecked(new Set())}
-                  className="text-sm font-medium text-muted hover:text-text py-2 px-3 rounded-xl hover:bg-surface transition-colors active:scale-[.97] touch-manipulation select-none"
-                >
-                  Uncheck all
-                </button>
-              )}
-              {/* Shopping Mode toggle — same size band as the US/Metric control */}
-              {!readOnly && (
-                <button
-                  onClick={toggleShoppingMode}
-                  title={shoppingMode ? 'Exit Shopping Mode' : 'Enter Shopping Mode'}
-                  className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl border transition-all touch-manipulation select-none ${
-                    shoppingMode
-                      ? 'bg-accent border-accent text-white'
-                      : 'bg-surface border-border text-muted hover:text-text hover:border-accent/30'
-                  }`}
-                >
-                  <ShoppingCart size={13} />
-                  Shopping
-                </button>
-              )}
-            </div>
-          }
+          action={checked.size > 0 ? (
+            <button
+              onClick={() => setChecked(new Set())}
+              className="text-sm font-medium text-muted hover:text-text py-2 px-3 rounded-xl hover:bg-surface transition-colors active:scale-[.97] touch-manipulation select-none"
+            >
+              Uncheck all
+            </button>
+          ) : undefined}
         >
           <ul className="space-y-1">
-            {processedIngredients.map((display, i) => {
-              const isSelected = selectedForList.has(i)
-              const isChecked  = checked.has(i)
-              const indicatorOn = shoppingMode ? isSelected : isChecked
-              return (
-                <li
-                  key={i}
-                  onClick={() => handleLiClick(i)}
-                  className={`flex items-start gap-3 px-3 py-3 sm:py-2.5 rounded-xl cursor-pointer select-none transition-all ${
-                    shoppingMode
-                      ? (isSelected ? 'bg-accent/10' : 'hover:bg-surface active:scale-[.99]')
-                      : (isChecked  ? 'opacity-40'  : 'hover:bg-surface active:scale-[.99]')
-                  }`}
-                >
-                  <span className={`mt-0.5 w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-colors ${indicatorOn ? 'bg-accent border-accent' : 'border-border'}`}>
-                    {indicatorOn && <Check size={10} className="text-white" strokeWidth={3.5} />}
-                  </span>
-                  <span className={`text-sm leading-relaxed ${!shoppingMode && isChecked ? 'line-through text-muted' : 'text-text'}`}>
-                    {display}
-                  </span>
-                </li>
-              )
-            })}
+            {processedIngredients.map((display, i) => (
+              <li key={i} onClick={() => toggleCheck(i)} className={`flex items-start gap-3 px-3 py-3 sm:py-2.5 rounded-xl cursor-pointer select-none transition-all ${checked.has(i) ? 'opacity-40' : 'hover:bg-surface active:scale-[.99]'}`}>
+                <span className={`mt-0.5 w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-colors ${checked.has(i) ? 'bg-accent border-accent' : 'border-border'}`}>
+                  {checked.has(i) && <Check size={10} className="text-white" strokeWidth={3.5} />}
+                </span>
+                <span className={`text-sm leading-relaxed ${checked.has(i) ? 'line-through text-muted' : 'text-text'}`}>
+                  {display}
+                </span>
+              </li>
+            ))}
           </ul>
         </Section>
 
@@ -921,42 +846,6 @@ export default function RecipeView({
           </div>
         )}
       </article>
-
-      {/* ── Floating action bar — Shopping Mode ───────────────── */}
-      {shoppingMode && selectedForList.size > 0 && (
-        <div className="fixed bottom-4 left-4 right-4 z-40 flex justify-center pointer-events-none">
-          <div className="pointer-events-auto bg-bg border border-border rounded-2xl shadow-2xl px-4 py-3 flex items-center gap-3 max-w-md w-full">
-            <span className="text-sm text-text font-medium flex-1">
-              {selectedForList.size} ingredient{selectedForList.size !== 1 ? 's' : ''} selected
-            </span>
-            <button
-              onClick={() => setShowAddToList(true)}
-              className="bg-accent hover:bg-accent/90 text-white text-sm font-semibold rounded-xl px-4 py-2 transition-all active:scale-[.98] flex items-center gap-1.5 flex-shrink-0"
-            >
-              <ShoppingCart size={14} />
-              Add to list
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── "Added to {list}" toast ───────────────────────────── */}
-      {toastList && (
-        <div className="fixed bottom-4 left-4 right-4 z-50 flex justify-center pointer-events-none">
-          <div className="bg-emerald-500/95 backdrop-blur-sm text-white text-sm font-semibold rounded-xl px-4 py-2.5 shadow-lg flex items-center gap-2">
-            <CheckCircle size={15} />
-            Added to {toastList}
-          </div>
-        </div>
-      )}
-
-      {showAddToList && (
-        <AddToListModal
-          ingredients={ingredientsToAdd}
-          onClose={() => setShowAddToList(false)}
-          onAdded={handleAdded}
-        />
-      )}
 
       {showNotes && (
         <KitchenNotesModal recipe={recipe} userId={user?.id} isSaved={saved} onClose={() => setShowNotes(false)} onSave={notes => setRecipe(r => ({ ...r, notes: notes || undefined }))} />
