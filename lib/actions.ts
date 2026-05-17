@@ -7,6 +7,7 @@ import { RATE_POLICY } from './rate-limit-policy'
 import { secLog } from './sec-log'
 import { createSupabaseServerClient } from './supabase-server'
 import { verifyOrigin } from './verify-origin'
+import { parseRecipeText } from './ai'
 import { promises as dns } from 'dns'
 
 // ── SSRF guard ────────────────────────────────────────────
@@ -352,6 +353,49 @@ function stripTags(html: string): string {
     .trim()
 }
 
+// Convert a full HTML page into clean plain text suitable for AI parsing.
+// Used by reparseRecipeWithAi as the input to parseRecipeText. Preserves
+// line breaks at block-level boundaries so Grok can see ingredient and
+// instruction rows as distinct lines rather than one flattened blob.
+function htmlToPlainText(html: string): string {
+  let text = html
+    // Drop noise blocks entirely — scripts, styles, comments
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+
+  // Convert block-closing tags to newlines so recipe rows stay on their
+  // own lines after stripping (ingredient <li> per line, step <p> per line).
+  text = text
+    .replace(/<\/(?:p|div|li|h[1-6]|tr|article|section)>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+
+  // Decode the common entities (mirror stripTags + numeric refs).
+  text = text
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&#(\d+);/g, (_, code) => {
+      try { return String.fromCharCode(parseInt(code, 10)) } catch { return ' ' }
+    })
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => {
+      try { return String.fromCharCode(parseInt(code, 16)) } catch { return ' ' }
+    })
+
+  // Normalise whitespace — collapse runs of spaces/tabs, then runs of
+  // blank lines, trimming the outer edges.
+  return text
+    .replace(/[ \t]+/g, ' ')
+    .replace(/[ \t]*\n[ \t]*/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
 // ── JSON-LD Extraction ─────────────────────────────────────
 
 // Walk an arbitrary JSON-LD value looking for the first object whose
@@ -605,5 +649,149 @@ export async function importRecipe(
       secLog('warn', { event: 'import_timeout', url: target })
     }
     return { error: `Could not fetch the page: ${msg}` }
+  }
+}
+
+// ── AI Re-parse Server Action ─────────────────────────────
+//
+// User-triggered escape hatch when importRecipe produces a bad result on
+// a site whose JSON-LD or HTML structure our deterministic extractors
+// can't handle cleanly. Visible as a "Re-parse with AI" banner on the
+// fresh-import preview in RecipeView.
+//
+// Protection layers (defense in depth — all must pass):
+//   1. isSafeUrl  — same SSRF/scheme guard as importRecipe
+//   2. verifyOrigin — CSRF guard (log-only mode for now per existing policy)
+//   3. IMPORT-tier rate limit (strict / fail-closed) — caps the URL fetch.
+//      Anonymous callers get the tighter ANONYMOUS bucket.
+//   4. safeFetch — DNS resolution check, redirect limit, 10s timeout,
+//      MIME + size enforcement, MAX_HTML_BYTES cap.
+//   5. AI-tier rate limit (inside parseRecipeText → aiPreflight) — caps the
+//      Grok call independently of the import bucket. One re-parse costs the
+//      user one slot in BOTH buckets.
+//   6. prioritiseRecipeContent (inside parseRecipeText) — caps text sent
+//      to Grok at 8000 chars, so HTML page size cannot drive token cost.
+//
+// Net effect: a re-parse costs at most one URL fetch + one Grok call per
+// allowed slot; abuse beyond that hits the strict rate-limit ceiling.
+export async function reparseRecipeWithAi(
+  url: string,
+): Promise<{ recipe?: Recipe; error?: string }> {
+  const target = url.trim().startsWith('http://')
+    ? 'https://' + url.trim().slice(7)
+    : url.trim()
+
+  if (!isSafeUrl(target)) {
+    secLog('warn', { event: 'invalid_reparse_url', url: target })
+    return { error: 'Invalid URL.' }
+  }
+
+  if (!await verifyOrigin()) {
+    return { error: 'Request origin not allowed.' }
+  }
+
+  // Determines rate-limit tier. parseRecipeText is anonymous-callable so
+  // we mirror that here — but anonymous callers get tighter IMPORT bucket.
+  const serverClient = await createSupabaseServerClient()
+  const { data: { user } } = await serverClient.auth.getUser()
+  const isAuthenticated = !!user
+
+  // First gate: IMPORT bucket (covers the URL fetch cost).
+  // parseRecipeText will independently gate the AI bucket downstream.
+  const key = await getRateLimitKey(user?.id)
+  const policy = isAuthenticated ? RATE_POLICY.IMPORT_AUTHENTICATED : RATE_POLICY.IMPORT_ANONYMOUS
+  if (await checkRateLimit(key, policy.max, policy.windowMs, policy.strict)) {
+    return { error: 'Too many requests — please wait a minute and try again.' }
+  }
+
+  try {
+    const res = await safeFetch(
+      target,
+      {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+            '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Cache-Control': 'max-age=0',
+          'Upgrade-Insecure-Requests': '1',
+        },
+        cache: 'no-store',
+      },
+      3,
+      10_000,
+    )
+
+    if (!res.ok) {
+      if (res.status === 402 || res.status === 403) {
+        return { error: `This website blocks automatic fetches (HTTP ${res.status}).` }
+      }
+      return { error: `The page returned an error (HTTP ${res.status}).` }
+    }
+
+    const ct = res.headers.get('content-type') ?? ''
+    if (!ct.includes('text/html') && !ct.includes('application/xhtml+xml')) {
+      secLog('warn', { event: 'reparse_non_html', url: target, content_type: ct })
+      return { error: 'That URL doesn\'t appear to be a recipe page.' }
+    }
+
+    const cl = parseInt(res.headers.get('content-length') ?? '0')
+    if (cl > MAX_HTML_BYTES) {
+      secLog('warn', { event: 'reparse_oversized_header', url: target, bytes: cl })
+      return { error: 'That page is too large to re-parse.' }
+    }
+
+    const html = await res.text()
+    if (html.length > MAX_HTML_BYTES) {
+      secLog('warn', { event: 'reparse_oversized_body', url: target, bytes: html.length })
+      return { error: 'That page is too large to re-parse.' }
+    }
+
+    // Hand cleaned text to the existing AI parser. parseRecipeText runs its
+    // own origin / auth / AI-rate-limit checks via aiPreflight.
+    const plain = htmlToPlainText(html)
+    const ai = await parseRecipeText(plain)
+    if (ai.error || !ai.result) {
+      return { error: ai.error ?? 'AI parsing failed — please try again.' }
+    }
+    const parsed = ai.result
+
+    const recipe: Recipe = {
+      id: crypto.randomUUID(),
+      title: cleanRecipeTitle(parsed.title || 'Imported Recipe'),
+      ingredients: parsed.ingredients ?? [],
+      instructions: parsed.instructions ?? [],
+      servings: parsed.servings ?? undefined,
+      prepTime: parsed.prepTime ?? undefined,
+      cookTime: parsed.cookTime ?? undefined,
+      image: undefined,
+      sourceUrl: target,
+    }
+
+    // Image handling mirrors importRecipe: authenticated users get a
+    // Supabase Storage upload of whatever URL Grok extracted (if any);
+    // anonymous callers get the placeholder either way.
+    const imgFromAi = parsed.imageUrl
+    if (isAuthenticated && imgFromAi && typeof imgFromAi === 'string') {
+      recipe.image = (await uploadImageToStorage(imgFromAi, target, recipe.id)) ?? PLACEHOLDER_IMAGE
+    } else {
+      recipe.image = PLACEHOLDER_IMAGE
+    }
+
+    return { recipe }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error'
+    if (msg.includes('Blocked unsafe URL')) {
+      return { error: 'That URL points to a restricted address and cannot be fetched.' }
+    }
+    if (msg.includes('Too many redirects')) {
+      secLog('warn', { event: 'reparse_too_many_redirects', url: target })
+      return { error: 'That URL redirects too many times.' }
+    }
+    if (err instanceof Error && err.name === 'TimeoutError') {
+      secLog('warn', { event: 'reparse_timeout', url: target })
+    }
+    return { error: `Could not re-parse the page: ${msg}` }
   }
 }

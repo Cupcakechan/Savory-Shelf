@@ -13,7 +13,7 @@ import {
   translateRecipe, suggestSubstitutes,
   type TranslateResult, type SubstitutesResult,
 } from '@/lib/ai'
-import { migrateRecipeImage } from '@/lib/actions'
+import { migrateRecipeImage, reparseRecipeWithAi } from '@/lib/actions'
 import KitchenNotesModal from './KitchenNotesModal'
 import AuthModal from './AuthModal'
 
@@ -339,7 +339,6 @@ export default function RecipeView({
   const [servings, setServings]           = useState(baseServings)
   const [checked, setChecked]             = useState<Set<number>>(new Set())
   const [saved, setSaved]                 = useState(initialSaved)
-  const [savePending, setSavePending]     = useState(false)
   const [user, setUser]                   = useState<User | null>(null)
   const [showNotes, setShowNotes]         = useState(false)
   const [showShare, setShowShare]         = useState(false)
@@ -352,6 +351,11 @@ export default function RecipeView({
   const [substitutesResult, setSubstitutesResult] = useState<SubstitutesResult | null>(null)
   const [substitutesCopied, setSubstitutesCopied] = useState(false)
   const [unit, setUnitRaw] = useState<'us' | 'metric'>('us')
+
+  // AI re-parse state — the "Re-parse with AI" escape hatch shown on
+  // fresh URL imports when the deterministic parser produces poor output.
+  const [reparsePending, setReparsePending] = useState(false)
+  const [reparseError,   setReparseError]   = useState('')
 
   const [tags, setTags]                 = useState<string[]>(initialRecipe.tags ?? [])
   const [userTags, setUserTags]         = useState<string[]>([])
@@ -473,36 +477,18 @@ export default function RecipeView({
   const toggleCheck = (i: number) =>
     setChecked(prev => { const next = new Set(prev); next.has(i) ? next.delete(i) : next.add(i); return next })
 
-  // Patient auth resolution — handles the post-mount hydration window where
-  // `user` state may still be null even though a valid session exists. Up to
-  // 3 attempts with brief backoff between them. Most calls resolve on the
-  // first try; the retry only matters in the narrow window right after a
-  // fresh import on a recently-loaded tab.
-  const resolveUser = async (): Promise<User | null> => {
-    let result = user
-    for (let i = 0; i < 3 && !result; i++) {
-      if (i > 0) await new Promise(r => setTimeout(r, 400))
-      const { data: { user: fresh } } = await supabase.auth.getUser()
-      result = fresh ?? null
-    }
-    if (result) setUser(result)
-    return result
-  }
-
   const toggleSave = async () => {
-    if (savePending) return  // ignore taps while a previous tap is still resolving
-
     // Mark that the user has taken an explicit save action — the mount-time
     // saved-check (above) must no longer be allowed to overwrite local state.
     hasUserActedRef.current = true
-    setSavePending(true)
 
-    const currentUser = await resolveUser()
+    let currentUser = user
     if (!currentUser) {
-      setSavePending(false)
-      setShowAuth(true)
-      return
+      const { data: { user: freshUser } } = await supabase.auth.getUser()
+      currentUser = freshUser ?? null
+      if (currentUser) setUser(currentUser)
     }
+    if (!currentUser) { setShowAuth(true); return }
 
     if (saved) {
       setSaved(false)   // optimistic — UI responds instantly
@@ -520,18 +506,50 @@ export default function RecipeView({
         console.error('[savoryshelf] save failed:', error.message)
       }
     }
+  }
 
-    setSavePending(false)
+  // Re-parse the source URL through Grok. Only available for fresh
+  // imports (initialSaved=false) that have a sourceUrl. Replaces the
+  // in-memory recipe with the AI-parsed version, preserving the id
+  // (so subsequent Save uses the same UUID) and falling back to the
+  // current image if Grok didn't return one.
+  const handleReparse = async () => {
+    if (!recipe.sourceUrl || reparsePending) return
+    setReparseError('')
+    setReparsePending(true)
+    try {
+      const { recipe: fresh, error } = await reparseRecipeWithAi(recipe.sourceUrl)
+      if (error || !fresh) {
+        setReparseError(error || 'Could not re-parse. Please try again.')
+        return
+      }
+      setRecipe(prev => ({
+        ...fresh,
+        id: prev.id,
+        sourceUrl: prev.sourceUrl,
+        image: (fresh.image && fresh.image !== '') ? fresh.image : prev.image,
+      }))
+      // Reset the user's checked-ingredients set since the ingredient list
+      // may have completely changed shape.
+      setChecked(new Set())
+    } catch (err) {
+      setReparseError(err instanceof Error ? err.message : 'Could not re-parse. Please try again.')
+    } finally {
+      setReparsePending(false)
+    }
   }
 
   const handleShare = async () => {
     // Share also performs a save when the recipe isn't yet in the user's
-    // collection — same race-vs-saved-check concern as toggleSave. Uses the
-    // shared resolveUser helper so a fresh-import share tap doesn't get
-    // silently dropped during the auth-hydration window.
+    // collection — same race-vs-saved-check concern as toggleSave.
     hasUserActedRef.current = true
 
-    const currentUser = await resolveUser()
+    let currentUser = user
+    if (!currentUser) {
+      const { data: { user: freshUser } } = await supabase.auth.getUser()
+      currentUser = freshUser ?? null
+      if (currentUser) setUser(currentUser)
+    }
     if (!currentUser) { setShowAuth(true); return }
 
     if (!saved) {
@@ -675,16 +693,10 @@ export default function RecipeView({
               </button>
               <button
                 onClick={toggleSave}
-                disabled={savePending}
-                title={savePending ? 'Saving…' : saved ? 'Remove from My Recipes' : 'Save to My Recipes'}
-                aria-label={savePending ? 'Saving…' : saved ? 'Remove from My Recipes' : 'Save to My Recipes'}
+                title={saved ? 'Remove from My Recipes' : 'Save to My Recipes'}
                 className={`p-3 sm:p-2.5 rounded-xl border transition-all ${saved ? 'bg-accent border-accent text-white' : 'border-border text-muted hover:border-accent hover:text-accent'}`}
               >
-                {savePending
-                  ? <Loader2 size={16} className="animate-spin" />
-                  : saved
-                    ? <BookmarkCheck size={16} />
-                    : <Bookmark size={16} />}
+                {saved ? <BookmarkCheck size={16} /> : <Bookmark size={16} />}
               </button>
             </div>
           )}
@@ -716,6 +728,37 @@ export default function RecipeView({
             </button>
           </div>
         </div>
+
+        {/* AI re-parse escape hatch — fresh URL imports only */}
+        {!readOnly && !initialSaved && recipe.sourceUrl && (
+          <div className="bg-accent/8 border border-accent/20 rounded-2xl px-4 py-3 mb-6">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Sparkles size={16} className="text-accent flex-shrink-0" />
+                <p className="text-xs font-medium text-text/85">
+                  Doesn&apos;t look right? Let AI re-parse it.
+                </p>
+              </div>
+              <button
+                onClick={handleReparse}
+                disabled={reparsePending}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-accent hover:text-accent/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0 py-1 px-2 active:scale-95"
+              >
+                {reparsePending ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" />
+                    Re-parsing…
+                  </>
+                ) : (
+                  <>Re-parse with AI</>
+                )}
+              </button>
+            </div>
+            {reparseError && (
+              <p className="text-xs text-highlight mt-2 ml-6">{reparseError}</p>
+            )}
+          </div>
+        )}
 
         {/* Missing ingredients banner — only shown when opened from the Pantry page */}
         {missingIngredients && missingIngredients.length > 0 && (
