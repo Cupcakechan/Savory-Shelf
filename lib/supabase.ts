@@ -71,3 +71,28 @@ export function toDbRecipe(recipe: Recipe, userId: string) {
     tags:         recipe.tags         ?? [],
   }
 }
+
+// ── Shopping List DB row types ─────────────────────────────
+// Mirrors the exact shape Supabase returns for the `shopping_lists` and
+// `shopping_list_items` tables. See docs/shopping-list-migration.sql for
+// the source-of-truth schema. App-level types and mappers will be added
+// alongside these when the feature UI lands.
+
+export interface DbShoppingList {
+  id:         string
+  user_id:    string
+  name:       string
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface DbShoppingListItem {
+  id:              string
+  list_id:         string
+  ingredient_name: string
+  quantity:        string | null
+  unit:            string | null
+  checked:         boolean
+  created_at:      string | null
+  updated_at:      string | null
+}
