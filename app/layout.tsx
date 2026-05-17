@@ -44,16 +44,23 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <main className="px-4 max-w-2xl mx-auto flex-1 w-full">{children}</main>
         <footer className="border-t border-border py-5 text-center mt-8 space-y-3">
           {/*
-            Cocolito Collective brand mark. The logo's own cream background acts
-            as a "brand stamp" sitting on the dark footer — rounded-xl softens
-            the edge so it reads as an intentional badge in both themes.
+            Cocolito Collective brand mark. Transparent PNGs whose visible
+            elements (cat / wordmark colour) are pre-tuned per theme; bg shows
+            through so there's nothing to colour-match.
           */}
           <img
-            src="/brand/cocolito-collective.jpg"
+            src="/brand/cocolito-light.png"
             alt="Cocolito Collective"
             width={96}
             height={96}
-            className="w-24 h-24 mx-auto rounded-xl"
+            className="block dark:hidden w-24 h-24 mx-auto"
+          />
+          <img
+            src="/brand/cocolito-dark.png"
+            alt="Cocolito Collective"
+            width={96}
+            height={96}
+            className="hidden dark:block w-24 h-24 mx-auto"
           />
           <p className="text-xs text-subtle">
             Have a feature in mind or encountered a bug?{' '}

@@ -679,8 +679,7 @@ export default function ShoppingListDetailPage({
 </style>
 </head>
 <body>
-  <div class="brand"><img src="${window.location.origin}/brand/cocolito-collective.jpg" alt="Cocolito Collective"></div>
-  <h1>${escapeHtml(list.name)}</h1>
++ <div class="brand"><img src="${window.location.origin}/brand/cocolito-print.png" alt="Cocolito Collective"></div>  <h1>${escapeHtml(list.name)}</h1>
   <p class="meta">${items.length} item${items.length !== 1 ? 's' : ''} · ${escapeHtml(new Date().toLocaleDateString())}</p>
   ${items.length === 0
     ? '<p style="font-style: italic; color: #888;">No items in this list.</p>'

@@ -350,20 +350,19 @@ export default function ImportPage() {
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-3.5rem)] pb-12">
       <div className="mb-10 text-center">
         {/*
-          SavoryShelf brand mark. Two JPGs whose backgrounds are pre-matched to
-          the --color-bg tokens so they melt into the page in either theme.
-          dark:hidden / hidden dark:block swap relies on tailwind.config.ts
-          using darkMode: 'class' (it does).
+          SavoryShelf brand mark. Transparent PNGs — the page bg shows through
+          so there's nothing to colour-match. dark:hidden / hidden dark:block
+          relies on tailwind.config.ts using darkMode: 'class' (it does).
         */}
         <img
-          src="/brand/savoryshelf-light.jpg"
+          src="/brand/savoryshelf-light.png"
           alt="SavoryShelf by Cocolito Collective"
           width={192}
           height={192}
           className="block dark:hidden w-48 h-48 mx-auto mb-6"
         />
         <img
-          src="/brand/savoryshelf-dark.jpg"
+          src="/brand/savoryshelf-dark.png"
           alt="SavoryShelf by Cocolito Collective"
           width={192}
           height={192}
