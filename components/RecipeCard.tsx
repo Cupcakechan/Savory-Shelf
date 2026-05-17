@@ -132,15 +132,18 @@ export default function RecipeCard({ recipe, onClick, onDelete, matchPercent, mi
         </div>
       </button>
 
-      {/* Top-right icon cluster — both stop propagation to avoid opening the card */}
-      <div className="absolute top-2 right-2 flex items-center gap-1 opacity-40 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+      {/* Top-right icon cluster — both stop propagation to avoid opening the card.
+          Always visible (no hover-reveal) so the buttons are tappable on touch
+          devices without a hover state. ~42px square hit areas, solid-ish bg +
+          shadow give clear separation from any underlying recipe photo. */}
+      <div className="absolute top-2 right-2 flex items-center gap-1.5">
         <button
           onClick={handleAddToList}
           title="Add all ingredients to a shopping list"
           aria-label="Add all ingredients to a shopping list"
-          className="p-2 rounded-lg bg-bg/80 backdrop-blur-sm border border-border text-muted hover:text-accent hover:border-accent/40 transition-colors"
+          className="p-3 rounded-lg bg-bg/90 backdrop-blur-sm border border-border shadow-sm text-text hover:text-accent hover:border-accent/40 hover:bg-bg active:scale-95 transition-all"
         >
-          <ListPlus size={13} />
+          <ListPlus size={18} />
         </button>
         <button
           onClick={e => {
@@ -149,9 +152,9 @@ export default function RecipeCard({ recipe, onClick, onDelete, matchPercent, mi
           }}
           title="Delete recipe"
           aria-label="Delete recipe"
-          className="p-2 rounded-lg bg-bg/80 backdrop-blur-sm border border-border text-muted hover:text-highlight hover:border-highlight/40 transition-colors"
+          className="p-3 rounded-lg bg-bg/90 backdrop-blur-sm border border-border shadow-sm text-text hover:text-highlight hover:border-highlight/40 hover:bg-bg active:scale-95 transition-all"
         >
-          <Trash2 size={13} />
+          <Trash2 size={18} />
         </button>
       </div>
 
