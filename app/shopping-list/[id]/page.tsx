@@ -646,6 +646,8 @@ export default function ShoppingListDetailPage({
     max-width: 720px;
     line-height: 1.4;
   }
+  .brand { text-align: center; margin: 0 0 20px 0; }
+  .brand img { width: 96px; height: 96px; display: inline-block; }
   h1 { font-size: 36px; margin: 0 0 8px 0; font-weight: 700; }
   .meta { color: #555; font-size: 13px; margin: 0 0 28px 0; padding-bottom: 16px; border-bottom: 1px solid #ddd; }
   ul { list-style: none; padding: 0; margin: 0; }
@@ -677,6 +679,7 @@ export default function ShoppingListDetailPage({
 </style>
 </head>
 <body>
+  <div class="brand"><img src="${window.location.origin}/brand/cocolito-collective.jpg" alt="Cocolito Collective"></div>
   <h1>${escapeHtml(list.name)}</h1>
   <p class="meta">${items.length} item${items.length !== 1 ? 's' : ''} · ${escapeHtml(new Date().toLocaleDateString())}</p>
   ${items.length === 0

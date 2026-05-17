@@ -42,8 +42,19 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="min-h-screen bg-bg font-body antialiased flex flex-col">
         <Nav />
         <main className="px-4 max-w-2xl mx-auto flex-1 w-full">{children}</main>
-        <footer className="border-t border-border py-5 text-center mt-8 space-y-1.5">
-          <p className="text-xs text-subtle">SavoryShelf by Cocolito Collective</p>
+        <footer className="border-t border-border py-5 text-center mt-8 space-y-3">
+          {/*
+            Cocolito Collective brand mark. The logo's own cream background acts
+            as a "brand stamp" sitting on the dark footer — rounded-xl softens
+            the edge so it reads as an intentional badge in both themes.
+          */}
+          <img
+            src="/brand/cocolito-collective.jpg"
+            alt="Cocolito Collective"
+            width={96}
+            height={96}
+            className="w-24 h-24 mx-auto rounded-xl"
+          />
           <p className="text-xs text-subtle">
             Have a feature in mind or encountered a bug?{' '}
             <a

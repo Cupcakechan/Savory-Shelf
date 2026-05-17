@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { ChefHat, Sun, Moon } from 'lucide-react'
+import { Sun, Moon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
@@ -119,11 +119,15 @@ export default function Nav() {
         visible and the nav is full-width).
       */}
       <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
-        {/* Logo */}
+        {/* Logo — SavoryShelf brand mark replaces the previous chef-hat tile. */}
         <Link href="/" className="flex items-center gap-2 flex-shrink-0">
-          <span className="w-7 h-7 rounded-lg bg-accent flex items-center justify-center flex-shrink-0">
-            <ChefHat size={15} className="text-white" strokeWidth={2.5} />
-          </span>
+          <img
+            src="/brand/savoryshelf-icon.jpg"
+            alt="SavoryShelf"
+            width={28}
+            height={28}
+            className="w-7 h-7 rounded-lg flex-shrink-0"
+          />
           <div className="flex-col leading-tight hidden sm:flex">
             <span className="font-display font-bold text-sm text-text tracking-tight">SavoryShelf</span>
             <span className="text-[10px] text-subtle">by Cocolito Collective</span>
