@@ -73,6 +73,41 @@ function normalizeName(raw: string): string {
   return words.join(' ').replace(/s$/, '')
 }
 
+// ── Display cleanup ───────────────────────────────────────
+
+/**
+ * Cleans an ingredient name for storage on a shopping list. Strips the
+ * stuff a shopper doesn't care about — metric-conversion parentheticals
+ * and prep-instruction comma clauses — without removing buy-relevant
+ * descriptors like "large", "fresh", or "extra virgin".
+ *
+ *   "(170g/180 ml) unsalted butter, melted & cooled for 5 minutes"
+ *     → "unsalted butter"
+ *
+ *   "1 cup all-purpose flour, sifted"  (after qty/unit are stripped)
+ *     → "all-purpose flour"
+ *
+ *   "salt to taste"  (no comma, no parens)
+ *     → "salt to taste"  (unchanged)
+ *
+ * If the cleanup somehow produces an empty result (e.g. input was just
+ * "(...)"), we fall back to the trimmed original to avoid inserting a
+ * blank ingredient row.
+ */
+function cleanNameForDisplay(raw: string): string {
+  const original = raw.trim()
+  let s = original
+  // Strip leading parenthetical (commonly a metric conversion)
+  s = s.replace(/^\([^)]*\)\s*/, '')
+  // Strip any remaining parentheticals
+  s = s.replace(/\([^)]*\)/g, '')
+  // Drop everything from the first comma onward — typically prep instructions
+  const commaIdx = s.indexOf(',')
+  if (commaIdx >= 0) s = s.slice(0, commaIdx)
+  s = s.replace(/\s+/g, ' ').trim()
+  return s || original
+}
+
 // ── Quantity parsing ──────────────────────────────────────
 
 const FRAC_VALUES: Record<string, number> = {
@@ -114,7 +149,7 @@ function formatQty(n: number): string {
 export interface ParsedIngredient {
   quantity: number | null
   unit:     string | null
-  /** The remaining name text after stripping leading qty/unit. Not yet normalised. */
+  /** Cleaned name suitable for display — parentheticals and prep clauses removed. */
   name:     string
 }
 
@@ -139,7 +174,7 @@ export function parseIngredient(line: string): ParsedIngredient {
     return {
       quantity: parseQty(m1[1]),
       unit:     normalizeUnit(m1[2]),
-      name:     m1[3].trim(),
+      name:     cleanNameForDisplay(m1[3]),
     }
   }
 
@@ -149,7 +184,7 @@ export function parseIngredient(line: string): ParsedIngredient {
     return {
       quantity: parseQty(m2[1]),
       unit:     null,
-      name:     m2[2].trim(),
+      name:     cleanNameForDisplay(m2[2]),
     }
   }
 
@@ -157,7 +192,7 @@ export function parseIngredient(line: string): ParsedIngredient {
   return {
     quantity: null,
     unit:     null,
-    name:     trimmed,
+    name:     cleanNameForDisplay(trimmed),
   }
 }
 
