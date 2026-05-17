@@ -27,46 +27,19 @@ function ThemeToggle() {
 }
 
 // ── Auth section ──────────────────────────────────────────
+// Pure UI now: user / showAuth are owned by <Nav /> (single source of truth
+// for the entire navigation surface). This component just renders the
+// appropriate button + modal and handles the sign-out action.
 
-function AuthSection() {
-  const [user, setUser]           = useState<User | null>(null)
-  const [showAuth, setShowAuth]   = useState(false)
+type AuthSectionProps = {
+  user: User | null
+  showAuth: boolean
+  setShowAuth: (v: boolean) => void
+}
+
+function AuthSection({ user, showAuth, setShowAuth }: AuthSectionProps) {
   const [signingOut, setSigningOut] = useState(false)
   const router = useRouter()
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => setUser(session?.user ?? null))
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
-      setUser(session?.user ?? null)
-    })
-    return () => subscription.unsubscribe()
-  }, [])
-
-  // When the magic-link callback tab signals via localStorage, pick up the
-  // new session, close the auth modal, and navigate to the main app so the
-  // user lands somewhere useful without any manual interaction.
-  useEffect(() => {
-    const handler = async (e: StorageEvent) => {
-      if (e.key !== 'savoryshelf-auth-success' || !e.newValue) return
-      try { localStorage.removeItem('savoryshelf-auth-success') } catch (_) {}
-      const { data: { session } } = await supabase.auth.getSession()
-      setUser(session?.user ?? null)
-      if (session?.user) {
-        setShowAuth(false)
-        router.push('/my-recipes')
-      }
-    }
-    window.addEventListener('storage', handler)
-    return () => window.removeEventListener('storage', handler)
-  }, [router])
-
-  // Bottom tab bar dispatches this when a logged-out user taps a gated tab
-  // (Pantry / Shopping). Opens the same modal as tapping "Sign in" directly.
-  useEffect(() => {
-    const handler = () => setShowAuth(true)
-    window.addEventListener('savoryshelf:show-auth', handler)
-    return () => window.removeEventListener('savoryshelf:show-auth', handler)
-  }, [])
 
   const handleSignOut = async () => {
     if (signingOut) return          // prevent double-clicks
@@ -106,30 +79,22 @@ function AuthSection() {
 // ── Bottom tab bar (mobile only) ──────────────────────────
 //
 // Renders a fixed bar pinned to the bottom of the viewport, < sm only.
-// Four primary destinations get equal-width thumb targets (~25% each).
-// Logged-out users still see all four tabs — tapping a gated one fires
-// 'savoryshelf:show-auth' which AuthSection above turns into a modal open.
-// Logged-out users CAN tap Import and (currently) My Recipes freely.
+// Logged-out taps on gated tabs (Recipes / Pantry / Shopping) open the
+// auth modal directly via setShowAuth — no custom-event hop needed since
+// state lives in the parent Nav.
 
-function BottomTabs() {
+type BottomTabsProps = {
+  user: User | null
+  setShowAuth: (v: boolean) => void
+}
+
+function BottomTabs({ user, setShowAuth }: BottomTabsProps) {
   const path = usePathname()
   const router = useRouter()
-  const [user, setUser] = useState<User | null>(null)
-
-  // Independent auth subscription so the tab bar knows whether to gate.
-  // Same pattern as AuthSection; the overhead is negligible and keeps each
-  // component self-contained without a state-lifting refactor.
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => setUser(session?.user ?? null))
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
-      setUser(session?.user ?? null)
-    })
-    return () => subscription.unsubscribe()
-  }, [])
 
   const tabs = [
     { href: '/',              icon: Link2,      label: 'Import',   gated: false, isMyRecipes: false },
-    { href: '/my-recipes',    icon: BookOpen,   label: 'Recipes',  gated: false, isMyRecipes: true  },
+    { href: '/my-recipes',    icon: BookOpen,   label: 'Recipes',  gated: true,  isMyRecipes: true  },
     { href: '/my-pantry',     icon: Carrot,     label: 'Pantry',   gated: true,  isMyRecipes: false },
     { href: '/shopping-list', icon: ListChecks, label: 'Shopping', gated: true,  isMyRecipes: false },
   ] as const
@@ -137,9 +102,9 @@ function BottomTabs() {
   type Tab = (typeof tabs)[number]
 
   const handleTap = (tab: Tab) => {
-    // Gate first — logged-out user tapping Pantry/Shopping opens auth modal
+    // Gate first — logged-out user tapping a gated tab opens auth modal
     if (tab.gated && !user) {
-      window.dispatchEvent(new CustomEvent('savoryshelf:show-auth'))
+      setShowAuth(true)
       return
     }
     // Mirror the desktop nav's "tap My Recipes while already on it returns
@@ -181,10 +146,44 @@ function BottomTabs() {
 }
 
 // ── Nav ───────────────────────────────────────────────────
+//
+// Owns the single supabase.auth subscription for the whole navigation
+// surface, plus the showAuth modal flag. Both AuthSection and BottomTabs
+// receive these as props — no duplicate subscriptions, no event hops.
 
 export default function Nav() {
   const path   = usePathname()
   const router = useRouter()
+
+  const [user, setUser]         = useState<User | null>(null)
+  const [showAuth, setShowAuth] = useState(false)
+
+  // Single auth subscription for the entire nav.
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => setUser(session?.user ?? null))
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
+      setUser(session?.user ?? null)
+    })
+    return () => subscription.unsubscribe()
+  }, [])
+
+  // When the magic-link callback tab signals via localStorage, pick up the
+  // new session, close the auth modal, and navigate to the main app so the
+  // user lands somewhere useful without any manual interaction.
+  useEffect(() => {
+    const handler = async (e: StorageEvent) => {
+      if (e.key !== 'savoryshelf-auth-success' || !e.newValue) return
+      try { localStorage.removeItem('savoryshelf-auth-success') } catch (_) {}
+      const { data: { session } } = await supabase.auth.getSession()
+      setUser(session?.user ?? null)
+      if (session?.user) {
+        setShowAuth(false)
+        router.push('/my-recipes')
+      }
+    }
+    window.addEventListener('storage', handler)
+    return () => window.removeEventListener('storage', handler)
+  }, [router])
 
   // whitespace-nowrap keeps every label on a single line — without it,
   // longer labels like "Shopping List" wrap and visually misalign with
@@ -240,13 +239,13 @@ export default function Nav() {
               </Link>
             </nav>
             <div className="hidden sm:block w-px h-5 bg-border mx-1" />
-            <AuthSection />
+            <AuthSection user={user} showAuth={showAuth} setShowAuth={setShowAuth} />
             <div className="w-px h-5 bg-border mx-1" />
             <ThemeToggle />
           </div>
         </div>
       </header>
-      <BottomTabs />
+      <BottomTabs user={user} setShowAuth={setShowAuth} />
     </>
   )
 }
