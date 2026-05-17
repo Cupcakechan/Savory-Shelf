@@ -5,10 +5,11 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   ChevronLeft, Printer, Plus, Trash2, Check,
-  AlertCircle, X, Loader2,
+  AlertCircle, X,
 } from 'lucide-react'
 import type { User } from '@supabase/supabase-js'
 import { supabase, type DbShoppingList, type DbShoppingListItem } from '@/lib/supabase'
+import { normalizeName } from '@/lib/shopping-aggregator'
 
 // Standard units shown in the per-row unit dropdown. Anything stored on a
 // row outside this set is appended dynamically to that row's options.
@@ -38,6 +39,68 @@ function formatItemForPrint(item: DbShoppingListItem): string {
   return parts.join(' ')
 }
 
+// ── Render-time grouping ──────────────────────────────────
+
+// A render unit is either a single item or a group of same-name items.
+// Groups surface the "Multiple measures of X" amber container; singles
+// render as plain rows. The transform is purely visual — the DB rows
+// underneath are unchanged.
+type RenderUnit =
+  | { kind: 'single'; key: string; items: [DbShoppingListItem]; allChecked: boolean; sortKey: string }
+  | { kind: 'group';  key: string; items: DbShoppingListItem[];  allChecked: boolean; sortKey: string }
+
+function buildRenderUnits(items: DbShoppingListItem[]): RenderUnit[] {
+  // Group by the same normalised name the aggregator uses for matching, so
+  // items that "should be one ingredient" land together even when units differ.
+  const byName = new Map<string, DbShoppingListItem[]>()
+  for (const item of items) {
+    const key = normalizeName(item.ingredient_name)
+    if (!byName.has(key)) byName.set(key, [])
+    byName.get(key)!.push(item)
+  }
+
+  const units: RenderUnit[] = []
+  for (const [name, members] of byName) {
+    // Within a group, sort: unchecked first, then by creation order.
+    const sorted = [...members].sort((a, b) => {
+      if (a.checked !== b.checked) return a.checked ? 1 : -1
+      return (a.created_at ?? '').localeCompare(b.created_at ?? '')
+    })
+
+    const allChecked = sorted.every(i => i.checked)
+    const firstUnchecked = sorted.find(i => !i.checked)
+    // sortKey: earliest unchecked created_at, else earliest overall. Keeps
+    // groups positioned by their oldest active member.
+    const sortKey = (firstUnchecked?.created_at ?? sorted[0]?.created_at ?? '')
+
+    if (sorted.length === 1) {
+      units.push({
+        kind: 'single',
+        key: sorted[0].id,
+        items: [sorted[0]],
+        allChecked,
+        sortKey,
+      })
+    } else {
+      units.push({
+        kind: 'group',
+        key: `group:${name}`,
+        items: sorted,
+        allChecked,
+        sortKey,
+      })
+    }
+  }
+
+  // Top-level sort: not-allChecked first, then all-checked. Within each by sortKey.
+  units.sort((a, b) => {
+    if (a.allChecked !== b.allChecked) return a.allChecked ? 1 : -1
+    return a.sortKey.localeCompare(b.sortKey)
+  })
+
+  return units
+}
+
 // ── Skeleton ──────────────────────────────────────────────
 
 function DetailSkeleton() {
@@ -62,12 +125,15 @@ function DetailSkeleton() {
 
 function ItemRow({
   item,
+  bare = false,
   onToggleChecked,
   onUpdateLocal,
   onCommitRemote,
   onDelete,
 }: {
   item:           DbShoppingListItem
+  /** Strips the row's own bg/border for nested rendering inside a group container. */
+  bare?:          boolean
   onToggleChecked: (id: string) => void
   onUpdateLocal:  (id: string, fields: Partial<DbShoppingListItem>) => void
   onCommitRemote: (id: string) => void
@@ -82,7 +148,9 @@ function ItemRow({
   }, [item.unit])
 
   return (
-    <div className={`flex items-start gap-3 px-3.5 py-3 bg-surface border border-border rounded-2xl transition-opacity ${item.checked ? 'opacity-60' : ''}`}>
+    <div className={`flex items-start gap-3 px-3.5 py-3 transition-opacity ${
+      bare ? 'rounded-xl' : 'bg-surface border border-border rounded-2xl'
+    } ${item.checked ? 'opacity-60' : ''}`}>
       {/* Checkbox */}
       <button
         onClick={() => onToggleChecked(item.id)}
@@ -137,6 +205,146 @@ function ItemRow({
       >
         <Trash2 size={14} />
       </button>
+    </div>
+  )
+}
+
+// ── Group container ───────────────────────────────────────
+
+function GroupContainer({
+  items,
+  onCombine,
+  onToggleChecked,
+  onUpdateLocal,
+  onCommitRemote,
+  onDelete,
+}: {
+  items:    DbShoppingListItem[]
+  onCombine: (items: DbShoppingListItem[], name: string, qty: string | null, unit: string | null) => Promise<void> | void
+  onToggleChecked: (id: string) => void
+  onUpdateLocal:   (id: string, fields: Partial<DbShoppingListItem>) => void
+  onCommitRemote:  (id: string) => void
+  onDelete:        (id: string) => void
+}) {
+  // The displayed group label — uses the first item's already-cleaned name
+  // rather than the aggressive normalised form, since "all-purpose flour"
+  // reads better than "all-purpose flour" stripped of plurals.
+  const displayName = items[0]?.ingredient_name ?? '…'
+
+  // Inline combine-form state lives in the group so the parent doesn't
+  // need to track which group is mid-edit.
+  const [combining, setCombining] = useState(false)
+  const [name, setName] = useState('')
+  const [qty, setQty]   = useState('')
+  const [unit, setUnit] = useState('')
+
+  // Standard set plus any of the group's existing non-standard units so
+  // they're not lost when the user combines.
+  const combineUnitOptions = useMemo(() => {
+    const base: string[] = [...STANDARD_UNITS]
+    for (const item of items) {
+      if (item.unit && !base.includes(item.unit)) base.push(item.unit)
+    }
+    return base
+  }, [items])
+
+  const open = () => {
+    setName(displayName)
+    setQty('')
+    setUnit('')
+    setCombining(true)
+  }
+
+  const cancel = () => {
+    setCombining(false)
+  }
+
+  const confirm = async () => {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    await onCombine(items, trimmed, qty.trim() || null, unit || null)
+    setCombining(false)
+  }
+
+  return (
+    <div className="bg-amber-500/8 border border-amber-500/20 rounded-2xl p-3">
+      <p className="flex items-center gap-1.5 text-xs font-semibold text-amber-500 uppercase tracking-wider px-1 mb-2">
+        <AlertCircle size={12} />
+        Multiple measures of {displayName}
+      </p>
+
+      <div className="space-y-1">
+        {items.map(item => (
+          <ItemRow
+            key={item.id}
+            item={item}
+            bare
+            onToggleChecked={onToggleChecked}
+            onUpdateLocal={onUpdateLocal}
+            onCommitRemote={onCommitRemote}
+            onDelete={onDelete}
+          />
+        ))}
+      </div>
+
+      {!combining ? (
+        <button
+          onClick={open}
+          className="w-full mt-2 py-2 rounded-xl text-xs font-semibold text-amber-500 hover:bg-amber-500/15 transition-colors active:scale-[.99]"
+        >
+          Combine into one
+        </button>
+      ) : (
+        <div className="mt-3 pt-3 border-t border-amber-500/20 space-y-2.5 px-1">
+          <p className="text-xs text-muted leading-relaxed">
+            Different units can&apos;t be added automatically. Enter the combined quantity for your list.
+          </p>
+          <input
+            type="text"
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="Combined name"
+            maxLength={120}
+            autoFocus
+            className="w-full bg-bg border border-border focus:border-accent rounded-xl px-3 py-2.5 text-sm text-text placeholder:text-subtle outline-none transition-colors"
+          />
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              inputMode="decimal"
+              value={qty}
+              onChange={e => setQty(e.target.value)}
+              placeholder="qty"
+              className="w-20 bg-bg border border-border focus:border-accent rounded-xl px-3 py-2.5 text-sm text-text placeholder:text-subtle outline-none transition-colors text-right"
+            />
+            <select
+              value={unit}
+              onChange={e => setUnit(e.target.value)}
+              className="flex-1 bg-bg border border-border focus:border-accent rounded-xl px-3 py-2.5 text-sm text-text outline-none transition-colors"
+            >
+              <option value="">(no unit)</option>
+              {combineUnitOptions.map(u => (
+                <option key={u} value={u}>{u}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={cancel}
+              className="flex-1 py-2.5 rounded-xl border border-border text-sm font-medium text-muted hover:text-text hover:border-accent/40 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirm}
+              disabled={!name.trim()}
+              className="flex-1 py-2.5 rounded-xl bg-amber-500 text-white text-sm font-semibold hover:bg-amber-500/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[.98]"
+            >
+              Combine
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -204,13 +412,14 @@ export default function ShoppingListDetailPage({
 
   // ── Derived ─────────────────────────────────────────────
 
-  // Unchecked first, then checked. Stable ordering by created_at within each group.
-  const sortedItems = useMemo(
-    () => [...items].sort((a, b) => {
-      if (a.checked !== b.checked) return a.checked ? 1 : -1
-      return (a.created_at ?? '').localeCompare(b.created_at ?? '')
-    }),
-    [items],
+  // Build groups + singles, sorted with unchecked first.
+  const renderUnits = useMemo(() => buildRenderUnits(items), [items])
+
+  // Flat order for print: items from each render unit in display order.
+  // Group members stay adjacent because they share a single render unit.
+  const flatOrderedItems = useMemo(
+    () => renderUnits.flatMap(u => u.items),
+    [renderUnits],
   )
 
   const checkedCount = useMemo(
@@ -339,6 +548,70 @@ export default function ShoppingListDetailPage({
     }
   }
 
+  // ── Combine handler ─────────────────────────────────────
+
+  // Replaces a group's worth of items with a single user-defined row.
+  // Insert-first-then-delete: if the insert fails, nothing has been
+  // destroyed yet. If the delete fails after the insert succeeded, we
+  // keep the new row (don't roll back) and surface a non-fatal warning —
+  // the user can clean up manually rather than losing all their data.
+  const performCombine = async (
+    groupItems: DbShoppingListItem[],
+    name: string,
+    qty: string | null,
+    unit: string | null,
+  ) => {
+    const newId = crypto.randomUUID()
+    const now   = new Date().toISOString()
+    const oldIds = groupItems.map(i => i.id)
+
+    const newItem: DbShoppingListItem = {
+      id:              newId,
+      list_id:         id,
+      ingredient_name: name,
+      quantity:        qty,
+      unit:            unit,
+      checked:         false,
+      created_at:      now,
+      updated_at:      now,
+    }
+
+    // Snapshot for rollback if the insert fails.
+    const previousItems = items
+
+    // Optimistic: drop old, append new.
+    setItems(prev => [...prev.filter(i => !oldIds.includes(i.id)), newItem])
+
+    const insertRes = await supabase
+      .from('shopping_list_items')
+      .insert({
+        id:              newId,
+        list_id:         id,
+        ingredient_name: name,
+        quantity:        qty,
+        unit:            unit,
+      })
+
+    if (insertRes.error) {
+      setItems(previousItems)
+      setError(insertRes.error.message)
+      return
+    }
+
+    const delRes = await supabase
+      .from('shopping_list_items')
+      .delete()
+      .in('id', oldIds)
+
+    if (delRes.error) {
+      // Non-fatal — the new combined item exists, the old rows may reappear
+      // on next load and the user can resolve manually. Better than losing
+      // the combined entry by trying to roll back.
+      console.warn('[combine] Failed to delete old items after insert:', delRes.error.message)
+      setError(`Combined item created, but couldn't remove the originals: ${delRes.error.message}`)
+    }
+  }
+
   // ── Print ───────────────────────────────────────────────
 
   const printList = () => {
@@ -349,8 +622,8 @@ export default function ShoppingListDetailPage({
       return
     }
 
-    // sortedItems is already in display order — keep print order matching.
-    const itemRows = sortedItems.map(item => {
+    // Use the flat order from renderUnits — group members stay adjacent in print.
+    const itemRows = flatOrderedItems.map(item => {
       const text = formatItemForPrint(item)
       return `<li class="${item.checked ? 'done' : ''}"><span class="box"></span><span class="text">${escapeHtml(text)}</span></li>`
     }).join('')
@@ -413,7 +686,6 @@ export default function ShoppingListDetailPage({
     win.document.write(html)
     win.document.close()
     win.focus()
-    // Slight delay so layout settles before print dialog fires.
     setTimeout(() => win.print(), 100)
   }
 
@@ -500,7 +772,7 @@ export default function ShoppingListDetailPage({
         </div>
       )}
 
-      {/* Items */}
+      {/* Items — grouped same-name items render inside a GroupContainer */}
       {items.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center bg-surface border border-border rounded-2xl mb-6">
           <span className="text-4xl mb-4 select-none">🛒</span>
@@ -511,16 +783,28 @@ export default function ShoppingListDetailPage({
         </div>
       ) : (
         <div className="space-y-2 mb-6">
-          {sortedItems.map(item => (
-            <ItemRow
-              key={item.id}
-              item={item}
-              onToggleChecked={toggleChecked}
-              onUpdateLocal={updateItemLocal}
-              onCommitRemote={commitItemRemote}
-              onDelete={deleteItem}
-            />
-          ))}
+          {renderUnits.map(unit =>
+            unit.kind === 'group' ? (
+              <GroupContainer
+                key={unit.key}
+                items={unit.items}
+                onCombine={performCombine}
+                onToggleChecked={toggleChecked}
+                onUpdateLocal={updateItemLocal}
+                onCommitRemote={commitItemRemote}
+                onDelete={deleteItem}
+              />
+            ) : (
+              <ItemRow
+                key={unit.key}
+                item={unit.items[0]}
+                onToggleChecked={toggleChecked}
+                onUpdateLocal={updateItemLocal}
+                onCommitRemote={commitItemRemote}
+                onDelete={deleteItem}
+              />
+            )
+          )}
         </div>
       )}
 

@@ -7,8 +7,8 @@
 // Same key + numeric quantities on both sides → sum into one row.
 // Same key + at least one non-numeric quantity → insert separately.
 // Different keys (e.g. different units of the same ingredient) → insert
-// separately. No unit conversion in Part A — see the follow-up "Middle
-// Path" task for grouped-row hints on unit mismatches.
+// separately. The detail-view "Combine into one" flow handles unit
+// mismatches with a manual user-driven reconcile.
 
 // ── Unit synonyms ─────────────────────────────────────────
 
@@ -62,7 +62,14 @@ const MODIFIERS = new Set([
   'optional', 'ripe', 'unripe',
 ])
 
-function normalizeName(raw: string): string {
+/**
+ * Aggressive name normalisation for match-key generation. Strips comma
+ * clauses, parens, modifier words, and trailing plural 's'. Exported so
+ * the shopping-list detail view can group items that should appear as
+ * one ingredient even when their units differ ("1 cup flour" + "200 g
+ * flour" both normalise to "flour").
+ */
+export function normalizeName(raw: string): string {
   let s = raw.toLowerCase().trim()
   // Drop trailing comma clauses: "eggs, beaten" → "eggs"
   s = s.split(',')[0].trim()
