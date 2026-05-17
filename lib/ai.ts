@@ -6,6 +6,7 @@ import type { Recipe } from './types'
 import { getRateLimitKey, checkRateLimit } from './rate-limit'
 import { RATE_POLICY } from './rate-limit-policy'
 import { verifyOrigin } from './verify-origin'
+import { createSupabaseServerClient } from './supabase-server'
 import { secLog } from './sec-log'
 
 // ── Model ─────────────────────────────────────────────────
@@ -16,6 +17,46 @@ function getModel() {
   }
   const xai = createXai({ apiKey: process.env.XAI_API_KEY })
   return xai('grok-3')
+}
+
+// ── AI preflight ──────────────────────────────────────────
+//
+// Centralises the security checks every AI call must pass:
+//
+//   1. Origin validation — log-only by design (see verify-origin.ts).
+//   2. Auth check        — required for value-add features (translate,
+//                          substitutes, pantry match/score); optional for
+//                          parseRecipeText which backs the anonymous
+//                          Import-without-account flow.
+//   3. Rate limit        — keyed by user.id when authenticated so multiple
+//                          users sharing an IP don't collide in the same
+//                          bucket. Anonymous callers fall back to IP+UA.
+//
+// Without these checks, AI endpoints were callable from any HTTP client
+// (curl, Postman, third-party site) with no auth verification, sharing
+// a single IP-keyed rate-limit bucket. Direct API abuse = real Grok bills.
+async function aiPreflight(
+  opts: { requireAuth: boolean },
+): Promise<{ ok: true; userId: string | null } | { ok: false; error: string }> {
+  if (!await verifyOrigin()) {
+    return { ok: false, error: 'Request origin not allowed.' }
+  }
+
+  const serverClient = await createSupabaseServerClient()
+  const { data: { user } } = await serverClient.auth.getUser()
+
+  if (opts.requireAuth && !user) {
+    return { ok: false, error: 'Please sign in to use AI features.' }
+  }
+
+  // Per-user bucket when authenticated; IP+UA when anonymous.
+  const key = await getRateLimitKey(user?.id)
+  const { max, windowMs, strict } = RATE_POLICY.AI
+  if (await checkRateLimit(key, max, windowMs, strict)) {
+    return { ok: false, error: 'Too many requests — please wait a moment and try again.' }
+  }
+
+  return { ok: true, userId: user?.id ?? null }
 }
 
 function parseJson<T>(raw: string): T {
@@ -174,10 +215,8 @@ export async function translateRecipe(
   recipe: Recipe,
 ): Promise<{ result?: TranslateResult; error?: string }> {
   try {
-    if (!await verifyOrigin()) return { error: 'Request origin not allowed.' }
-    const key = await getRateLimitKey()
-    const ap = RATE_POLICY.AI
-    if (await checkRateLimit(key, ap.max, ap.windowMs, ap.strict)) return { error: 'Too many requests — please wait a moment and try again.' }
+    const pre = await aiPreflight({ requireAuth: true })
+    if (!pre.ok) return { error: pre.error }
 
     const prompt =
       `Translate this recipe into English.\n\n` +
@@ -206,10 +245,8 @@ export async function suggestSubstitutes(
   recipe: Recipe,
 ): Promise<{ result?: SubstitutesResult; error?: string }> {
   try {
-    if (!await verifyOrigin()) return { error: 'Request origin not allowed.' }
-    const key = await getRateLimitKey()
-    const ap = RATE_POLICY.AI
-    if (await checkRateLimit(key, ap.max, ap.windowMs, ap.strict)) return { error: 'Too many requests — please wait a moment and try again.' }
+    const pre = await aiPreflight({ requireAuth: true })
+    if (!pre.ok) return { error: pre.error }
 
     const prompt =
       `Recipe: "${recipe.title}"\n\n` +
@@ -251,15 +288,16 @@ function prioritiseRecipeContent(text: string, limit = 8000): string {
   return text.slice(0, limit)
 }
 
-/** Extract structured recipe fields from raw pasted text using Grok. */
+/**
+ * Extract structured recipe fields from raw pasted text using Grok.
+ * Anonymous-callable — backs the Import-without-account flow on /.
+ */
 export async function parseRecipeText(
   text: string,
 ): Promise<{ result?: ParsedRecipeResult; error?: string }> {
   try {
-    if (!await verifyOrigin()) return { error: 'Request origin not allowed.' }
-    const key = await getRateLimitKey()
-    const ap = RATE_POLICY.AI
-    if (await checkRateLimit(key, ap.max, ap.windowMs, ap.strict)) return { error: 'Too many requests — please wait a moment and try again.' }
+    const pre = await aiPreflight({ requireAuth: false })
+    if (!pre.ok) return { error: pre.error }
 
     const { text: raw } = await generateText({
       model: getModel(),
@@ -292,10 +330,8 @@ export async function checkPantryMatchBatch(
   }
 
   try {
-    if (!await verifyOrigin()) return { error: 'Request origin not allowed.' }
-    const key = await getRateLimitKey()
-    const ap = RATE_POLICY.AI
-    if (await checkRateLimit(key, ap.max, ap.windowMs, ap.strict)) return { error: 'Too many requests — please wait a moment and try again.' }
+    const pre = await aiPreflight({ requireAuth: true })
+    if (!pre.ok) return { error: pre.error }
 
     const recipeList = recipes
       .map(r => `- ${r.id} | ${r.ingredients.slice(0, 20).join(', ')}`)
@@ -339,10 +375,8 @@ export async function scoreRecipesByPantry(
   }
 
   try {
-    if (!await verifyOrigin()) return { error: 'Request origin not allowed.' }
-    const key = await getRateLimitKey()
-    const ap = RATE_POLICY.AI
-    if (await checkRateLimit(key, ap.max, ap.windowMs, ap.strict)) return { error: 'Too many requests — please wait a moment and try again.' }
+    const pre = await aiPreflight({ requireAuth: true })
+    if (!pre.ok) return { error: pre.error }
 
     // Cap at 15 recipes and 12 ingredients each to keep the prompt
     // small enough for Grok to respond well within serverless time limits.
