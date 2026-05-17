@@ -42,7 +42,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="min-h-screen bg-bg font-body antialiased flex flex-col">
         <Nav />
         <main className="px-4 max-w-2xl mx-auto flex-1 w-full">{children}</main>
-        <footer className="border-t border-border py-5 text-center mt-8 space-y-3">
+        {/*
+          mb-20 sm:mb-0 — on mobile the fixed BottomTabs bar (in Nav.tsx) is
+          ~60px tall and pinned to viewport bottom. The margin keeps the
+          footer text from sitting underneath it once the user scrolls to
+          the document end. Desktop is unchanged.
+        */}
+        <footer className="border-t border-border py-5 text-center mt-8 mb-20 sm:mb-0 space-y-3">
           {/*
             Cocolito Collective brand mark. Transparent PNGs whose visible
             elements (cat / wordmark colour) are pre-tuned per theme; bg shows
