@@ -111,7 +111,14 @@ export default function Nav() {
 
   return (
     <header className="sticky top-0 z-40 bg-bg/80 backdrop-blur-md border-b border-border">
-      <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
+      {/*
+        gap-4 acts as a MINIMUM spacing between the logo and the nav cluster.
+        With justify-between, the items still spread to the container edges
+        on wide viewports — the gap only kicks in when content would otherwise
+        cause the two sides to touch (sm-to-md range where the subtitle is
+        visible and the nav is full-width).
+      */}
+      <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2 flex-shrink-0">
           <span className="w-7 h-7 rounded-lg bg-accent flex items-center justify-center flex-shrink-0">
