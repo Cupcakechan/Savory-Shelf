@@ -210,6 +210,8 @@ export default function ShoppingListsPage() {
         .from('shopping_lists')
         .select('id, name, created_at, updated_at, shopping_list_items(count)')
         .order('updated_at', { ascending: false })
+        // Safety cap — 100 active lists is workflow-broken territory.
+        .limit(100)
 
       if (error) {
         setError(error.message)

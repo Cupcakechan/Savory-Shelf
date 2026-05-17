@@ -391,7 +391,9 @@ export default function ShoppingListDetailPage({
         supabase.from('shopping_list_items')
           .select('id, list_id, ingredient_name, quantity, unit, checked, created_at, updated_at')
           .eq('list_id', id)
-          .order('created_at', { ascending: true }),
+          .order('created_at', { ascending: true })
+          // Safety cap — a 500-item single shopping run is catering-scale.
+          .limit(500),
       ])
 
       if (listRes.error)  setError(listRes.error.message)

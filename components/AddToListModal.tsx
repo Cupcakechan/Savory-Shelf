@@ -34,6 +34,8 @@ export default function AddToListModal({ ingredients, onClose, onAdded }: Props)
       .from('shopping_lists')
       .select('id, name')
       .order('updated_at', { ascending: false })
+      // Safety cap — matches the My Shopping Lists page.
+      .limit(100)
       .then(({ data, error }) => {
         if (error) {
           setError(error.message)
@@ -58,6 +60,9 @@ export default function AddToListModal({ ingredients, onClose, onAdded }: Props)
         .from('shopping_list_items')
         .select('id, ingredient_name, quantity, unit, checked')
         .eq('list_id', listId)
+        // Safety cap — matches the detail page; order makes truncation deterministic.
+        .order('created_at', { ascending: true })
+        .limit(500)
       if (fetchErr) throw fetchErr
 
       const existing = (existingData ?? []) as ExistingItem[]
