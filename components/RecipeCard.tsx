@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Clock, Trash2 } from 'lucide-react'
+import { Clock, Trash2, ListPlus } from 'lucide-react'
 import { Recipe } from '@/lib/types'
+import AddToListModal from './AddToListModal'
 
 interface Props {
   recipe: Recipe
@@ -30,6 +31,23 @@ export default function RecipeCard({ recipe, onClick, onDelete, matchPercent, mi
   const count = ingredientCount(recipe)
   const [imgFailed, setImgFailed] = useState(false)
   useEffect(() => { setImgFailed(false) }, [recipe.id])
+
+  // One-tap "Add all ingredients to a shopping list" flow. Self-contained:
+  // opens AddToListModal with the recipe's base-quantity ingredient strings
+  // and flashes a brief emerald bottom-bar toast on success.
+  const [showAddToList, setShowAddToList] = useState(false)
+  const [addedTo, setAddedTo]             = useState('')
+
+  const handleAddToList = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setShowAddToList(true)
+  }
+
+  const handleAdded = (listName: string) => {
+    setShowAddToList(false)
+    setAddedTo(listName)
+    setTimeout(() => setAddedTo(''), 2200)
+  }
 
   return (
     <div className="relative group">
@@ -75,7 +93,7 @@ export default function RecipeCard({ recipe, onClick, onDelete, matchPercent, mi
         </div>
 
         {/* Text */}
-        <div className="p-4 pr-10">
+        <div className="p-4 pr-14">
           <h3 className="font-display font-semibold text-sm text-text leading-snug line-clamp-2 mb-2">
             {cleanTitle(recipe.title)}
           </h3>
@@ -114,17 +132,43 @@ export default function RecipeCard({ recipe, onClick, onDelete, matchPercent, mi
         </div>
       </button>
 
-      {/* Delete button */}
-      <button
-        onClick={e => {
-          e.stopPropagation()
-          if (confirm(`Delete "${recipe.title}"?`)) onDelete(recipe.id)
-        }}
-        title="Delete recipe"
-        className="absolute top-2 right-2 p-2 rounded-lg bg-bg/80 backdrop-blur-sm border border-border text-muted hover:text-highlight hover:border-highlight/40 opacity-40 sm:opacity-0 group-hover:opacity-100 transition-all"
-      >
-        <Trash2 size={13} />
-      </button>
+      {/* Top-right icon cluster — both stop propagation to avoid opening the card */}
+      <div className="absolute top-2 right-2 flex items-center gap-1 opacity-40 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+        <button
+          onClick={handleAddToList}
+          title="Add all ingredients to a shopping list"
+          aria-label="Add all ingredients to a shopping list"
+          className="p-2 rounded-lg bg-bg/80 backdrop-blur-sm border border-border text-muted hover:text-accent hover:border-accent/40 transition-colors"
+        >
+          <ListPlus size={13} />
+        </button>
+        <button
+          onClick={e => {
+            e.stopPropagation()
+            if (confirm(`Delete "${recipe.title}"?`)) onDelete(recipe.id)
+          }}
+          title="Delete recipe"
+          aria-label="Delete recipe"
+          className="p-2 rounded-lg bg-bg/80 backdrop-blur-sm border border-border text-muted hover:text-highlight hover:border-highlight/40 transition-colors"
+        >
+          <Trash2 size={13} />
+        </button>
+      </div>
+
+      {/* Success toast — emerald stripe at the bottom of the card for ~2s */}
+      {addedTo && (
+        <div className="absolute bottom-0 inset-x-0 bg-emerald-500 text-white text-center text-xs font-semibold py-2 z-10 rounded-b-2xl pointer-events-none">
+          ✓ Added to {addedTo}
+        </div>
+      )}
+
+      {showAddToList && (
+        <AddToListModal
+          ingredients={recipe.ingredients}
+          onClose={() => setShowAddToList(false)}
+          onAdded={handleAdded}
+        />
+      )}
     </div>
   )
 }
