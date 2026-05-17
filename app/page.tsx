@@ -349,6 +349,26 @@ export default function ImportPage() {
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-3.5rem)] pb-12">
       <div className="mb-10 text-center">
+        {/*
+          SavoryShelf brand mark. Two JPGs whose backgrounds are pre-matched to
+          the --color-bg tokens so they melt into the page in either theme.
+          dark:hidden / hidden dark:block swap relies on tailwind.config.ts
+          using darkMode: 'class' (it does).
+        */}
+        <img
+          src="/brand/savoryshelf-light.jpg"
+          alt="SavoryShelf by Cocolito Collective"
+          width={192}
+          height={192}
+          className="block dark:hidden w-48 h-48 mx-auto mb-6"
+        />
+        <img
+          src="/brand/savoryshelf-dark.jpg"
+          alt="SavoryShelf by Cocolito Collective"
+          width={192}
+          height={192}
+          className="hidden dark:block w-48 h-48 mx-auto mb-6"
+        />
         <h1 className="font-display text-4xl md:text-5xl font-bold text-text mb-3">
           Cook it your way.
         </h1>
