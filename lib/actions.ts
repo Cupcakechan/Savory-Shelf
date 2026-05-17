@@ -263,6 +263,16 @@ export async function migrateRecipeImage(
     .maybeSingle()
   if (!owned) return {}
 
+  // Rate-limit migrations under the same IMAGE_FETCH policy as fetchRecipeImage.
+  // Each recipe migrates at most once (image_base64 is cleared on success), but
+  // a logged-in user with many legacy recipes could still burst service-role
+  // storage writes. Silent return keeps the fire-and-forget UI flow clean —
+  // the recipe will continue to display via its image_base64 fallback and
+  // retry on the next visit.
+  const key = await getRateLimitKey(user.id)
+  const fp  = RATE_POLICY.IMAGE_FETCH
+  if (await checkRateLimit(key, fp.max, fp.windowMs, fp.strict)) return {}
+
   try {
     const { data } = await supabaseAdmin
       .from('recipes')
