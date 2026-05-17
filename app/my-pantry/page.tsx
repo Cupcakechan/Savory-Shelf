@@ -80,7 +80,7 @@ export default function MyPantryPage() {
 
       const pantryPromise  = supabase.from('pantry').select('staples').eq('user_id', session.user.id).maybeSingle()
       // Safety cap — same as My Recipes; grid is unpaginated.
-      const recipesPromise = supabase.from('recipes').select(LIST_COLUMNS).order('created_at', { ascending: false }).limit(500)
+      const recipesPromise = supabase.from('recipes').select(LIST_COLUMNS).eq('user_id', session.user.id).order('created_at', { ascending: false }).limit(500)
 
       const pantryRes = await pantryPromise
       const staples = pantryRes.data?.staples ?? []

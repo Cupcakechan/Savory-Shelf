@@ -73,10 +73,11 @@ export default function MyRecipesPage() {
 
   // ── Data loaders ────────────────────────────────────────
 
-  const loadRecipes = async (): Promise<Recipe[]> => {
+  const loadRecipes = async (userId: string): Promise<Recipe[]> => {
     const { data } = await supabase
       .from('recipes')
       .select(LIST_COLUMNS)
+      .eq('user_id', userId)
       .order('created_at', { ascending: false })
       // Safety cap — grid is unpaginated; users beyond this exit design scope.
       // Newest 500 win because of the order above.
@@ -168,7 +169,9 @@ export default function MyRecipesPage() {
       setUser(session?.user ?? null)
 
       const [loaded, pantryResult] = await Promise.all([
-        loadRecipes(),
+        session?.user
+          ? loadRecipes(session.user.id)
+          : Promise.resolve([] as Recipe[]),
         session?.user
           ? loadPantry(session.user.id)
           : Promise.resolve({ staples: [] as string[], cache: null }),
@@ -185,7 +188,7 @@ export default function MyRecipesPage() {
       if (session?.user) {
         setUser(session.user)
         loadPantry(session.user.id)
-        await loadRecipes()
+        await loadRecipes(session.user.id)
       } else {
         setUser(null)
         setRecipes([])
@@ -246,7 +249,7 @@ export default function MyRecipesPage() {
 
   const handleBack = () => {
     setSelected(null)
-    loadRecipes()
+    if (user) loadRecipes(user.id)
   }
 
   // ── Render guards ────────────────────────────────────────
