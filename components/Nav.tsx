@@ -101,8 +101,11 @@ export default function Nav() {
   const path   = usePathname()
   const router = useRouter()
 
+  // whitespace-nowrap keeps every label on a single line — without it,
+  // longer labels like "Shopping List" wrap and visually misalign with
+  // the shorter single-line tabs next to them.
   const linkCls = (href: string) =>
-    `text-sm font-medium px-3 py-2 sm:py-1.5 rounded-lg transition-colors cursor-pointer touch-manipulation select-none ` +
+    `text-sm font-medium px-3 py-2 sm:py-1.5 rounded-lg transition-colors cursor-pointer touch-manipulation select-none whitespace-nowrap ` +
     (path === href ?
       'bg-surface text-text' : 'text-muted hover:text-text hover:bg-surface/60')
 
@@ -151,7 +154,7 @@ export default function Nav() {
               Pantry
             </Link>
 
-            {/* Shopping Lists — top-level CRUD page; item editing lives at /shopping-list/[id] (added in a follow-up task) */}
+            {/* Shopping Lists — top-level CRUD page; item editing lives at /shopping-list/[id] */}
             <Link href="/shopping-list" className={linkCls('/shopping-list')}>
               Shopping List
             </Link>
