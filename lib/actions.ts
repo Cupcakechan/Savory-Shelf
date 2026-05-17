@@ -354,6 +354,34 @@ function stripTags(html: string): string {
 
 // ── JSON-LD Extraction ─────────────────────────────────────
 
+// Walk an arbitrary JSON-LD value looking for the first object whose
+// `@type` is (or includes) 'Recipe'. Handles the three shapes publishers
+// commonly emit:
+//   • top-level Recipe object
+//   • top-level @graph array containing Recipe
+//   • Recipe nested inside another node (e.g. Yoast's WebPage → mainEntity,
+//     which is how Love and Lemons and many WordPress sites emit it)
+function findRecipeNode(node: unknown): Record<string, unknown> | null {
+  if (!node || typeof node !== 'object') return null
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const found = findRecipeNode(item)
+      if (found) return found
+    }
+    return null
+  }
+  const obj = node as Record<string, unknown>
+  const type = obj['@type']
+  if (type === 'Recipe' || (Array.isArray(type) && type.includes('Recipe'))) {
+    return obj
+  }
+  for (const value of Object.values(obj)) {
+    const found = findRecipeNode(value)
+    if (found) return found
+  }
+  return null
+}
+
 function extractJsonLd(html: string): Recipe | null {
   const scriptRe = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
   let match: RegExpExecArray | null
@@ -362,66 +390,57 @@ function extractJsonLd(html: string): Recipe | null {
     try {
       const data = JSON.parse(match[1].trim())
 
-      const candidates: unknown[] = Array.isArray(data['@graph'])
-        ? data['@graph']
-        : Array.isArray(data)
-        ? data
-        : [data]
+      const item = findRecipeNode(data)
+      if (!item) continue
 
-      for (const raw of candidates) {
-        const item = raw as Record<string, unknown>
-        const type = item['@type']
-        const isRecipe =
-          type === 'Recipe' ||
-          (Array.isArray(type) && type.includes('Recipe'))
+      // stripTags handles publishers that inline affiliate <a> tags inside
+      // ingredient strings (Love and Lemons does this for Target/Amazon links).
+      const ingredients = ((item.recipeIngredient as unknown[] | undefined) ?? [])
+        .map((s) => (typeof s === 'string' ? stripTags(s) : ''))
+        .filter(Boolean)
 
-        if (!isRecipe) continue
+      let instructions: string[] = []
+      const raw_inst = item.recipeInstructions
+      if (Array.isArray(raw_inst)) {
+        instructions = raw_inst
+          .map((s: unknown) => {
+            if (typeof s === 'string') return stripTags(s)
+            const obj = s as Record<string, unknown>
+            if (Array.isArray(obj.itemListElement)) {
+              return (obj.itemListElement as Record<string, unknown>[])
+                .map((step) => stripTags(String(step.text || step.name || '')))
+                .join(' ')
+            }
+            return stripTags(String(obj.text || obj.name || ''))
+          })
+          .filter(Boolean)
+      } else if (typeof raw_inst === 'string') {
+        instructions = [stripTags(raw_inst)]
+      }
 
-        const ingredients = (item.recipeIngredient as string[] | undefined) ?? []
+      const yieldRaw = item.recipeYield
+      const yieldStr = Array.isArray(yieldRaw)
+        ? String(yieldRaw[0])
+        : String(yieldRaw ?? '')
+      const servings = parseInt(yieldStr) || undefined
 
-        let instructions: string[] = []
-        const raw_inst = item.recipeInstructions
-        if (Array.isArray(raw_inst)) {
-          instructions = raw_inst
-            .map((s: unknown) => {
-              if (typeof s === 'string') return stripTags(s)
-              const obj = s as Record<string, unknown>
-              if (Array.isArray(obj.itemListElement)) {
-                return (obj.itemListElement as Record<string, unknown>[])
-                  .map((step) => stripTags(String(step.text || step.name || '')))
-                  .join(' ')
-              }
-              return stripTags(String(obj.text || obj.name || ''))
-            })
-            .filter(Boolean)
-        } else if (typeof raw_inst === 'string') {
-          instructions = [stripTags(raw_inst)]
-        }
+      const imgRaw = item.image
+      const image =
+        typeof imgRaw === 'string'
+          ? imgRaw
+          : Array.isArray(imgRaw)
+          ? (imgRaw[0] as Record<string, string>)?.url ?? imgRaw[0]
+          : (imgRaw as Record<string, string> | undefined)?.url
 
-        const yieldRaw = item.recipeYield
-        const yieldStr = Array.isArray(yieldRaw)
-          ? String(yieldRaw[0])
-          : String(yieldRaw ?? '')
-        const servings = parseInt(yieldStr) || undefined
-
-        const imgRaw = item.image
-        const image =
-          typeof imgRaw === 'string'
-            ? imgRaw
-            : Array.isArray(imgRaw)
-            ? (imgRaw[0] as Record<string, string>)?.url ?? imgRaw[0]
-            : (imgRaw as Record<string, string> | undefined)?.url
-
-        return {
-          id: crypto.randomUUID(),
-          title: cleanRecipeTitle(String(item.name || 'Untitled Recipe')),
-          image: typeof image === 'string' ? image : undefined,
-          prepTime: parseDuration(String(item.prepTime || '')),
-          cookTime: parseDuration(String(item.cookTime || '')),
-          servings,
-          ingredients,
-          instructions,
-        }
+      return {
+        id: crypto.randomUUID(),
+        title: cleanRecipeTitle(String(item.name || 'Untitled Recipe')),
+        image: typeof image === 'string' ? image : undefined,
+        prepTime: parseDuration(String(item.prepTime || '')),
+        cookTime: parseDuration(String(item.cookTime || '')),
+        servings,
+        ingredients,
+        instructions,
       }
     } catch {
       // malformed JSON-LD → try next script tag
