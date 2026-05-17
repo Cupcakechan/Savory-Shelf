@@ -51,6 +51,35 @@ Verify these policies are active (`SELECT tablename, policyname, cmd FROM pg_pol
 
 ---
 
+## Supabase RLS — `shopping_lists` table
+
+Source: `docs/shopping-list-migration.sql`. Same `auth.uid() = user_id`
+pattern as `recipes` and `pantry`.
+
+| Policy | Command | Expression |
+|--------|---------|------------|
+| Users can only see their own shopping lists | SELECT | `auth.uid() = user_id` |
+| Users can only insert their own shopping lists | INSERT | `auth.uid() = user_id` (WITH CHECK) |
+| Users can only update their own shopping lists | UPDATE | `auth.uid() = user_id` (USING + WITH CHECK) |
+| Users can only delete their own shopping lists | DELETE | `auth.uid() = user_id` |
+
+---
+
+## Supabase RLS — `shopping_list_items` table
+
+Items don't store `user_id`; ownership is enforced by joining to the parent
+list. The `shopping_list_items_list_id_idx` index keeps this fast — drop
+it and every RLS check becomes a sequential scan.
+
+| Policy | Command | Expression |
+|--------|---------|------------|
+| Users can only see their own shopping list items | SELECT | `auth.uid() = (SELECT user_id FROM shopping_lists WHERE id = list_id)` |
+| Users can only insert their own shopping list items | INSERT | same (WITH CHECK) |
+| Users can only update their own shopping list items | UPDATE | same (USING + WITH CHECK) |
+| Users can only delete their own shopping list items | DELETE | same (USING) |
+
+---
+
 ## Supabase RLS — `rate_limits` table
 
 | Setting | Required value | What breaks if it drifts |
@@ -90,7 +119,7 @@ Allowed origins at runtime:
 SELECT tablename, rowsecurity
 FROM pg_tables
 WHERE schemaname = 'public'
-  AND tablename IN ('recipes', 'pantry', 'rate_limits');
+  AND tablename IN ('recipes', 'pantry', 'shopping_lists', 'shopping_list_items', 'rate_limits');
 
 -- 2. Confirm all expected policies exist
 SELECT tablename, policyname, cmd, qual

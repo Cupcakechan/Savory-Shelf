@@ -103,7 +103,8 @@ export default function Nav() {
 
   const linkCls = (href: string) =>
     `text-sm font-medium px-3 py-2 sm:py-1.5 rounded-lg transition-colors cursor-pointer touch-manipulation select-none ` +
-    (path === href ? 'bg-surface text-text' : 'text-muted hover:text-text hover:bg-surface/60')
+    (path === href ?
+      'bg-surface text-text' : 'text-muted hover:text-text hover:bg-surface/60')
 
   return (
     <header className="sticky top-0 z-40 bg-bg/80 backdrop-blur-md border-b border-border">
@@ -148,6 +149,11 @@ export default function Nav() {
             {/* My Pantry — always visible so users can manage staples from anywhere */}
             <Link href="/my-pantry" className={linkCls('/my-pantry')}>
               Pantry
+            </Link>
+
+            {/* Shopping Lists — top-level CRUD page; item editing lives at /shopping-list/[id] (added in a follow-up task) */}
+            <Link href="/shopping-list" className={linkCls('/shopping-list')}>
+              Shopping List
             </Link>
           </nav>
           <div className="w-px h-5 bg-border mx-1" />
