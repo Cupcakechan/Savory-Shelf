@@ -358,6 +358,13 @@ export default function RecipeView({
   const [tagInput, setTagInput]         = useState('')
   const tagInputRef                     = useRef<HTMLInputElement>(null)
 
+  // Flips to true the moment the user clicks Save or Share. Read inside the
+  // mount-time saved-check below to prevent that stale SELECT from clobbering
+  // the user's optimistic state on fresh imports — without this guard, the
+  // saved-check can race against (and lose to) the user's INSERT, silently
+  // reverting the bookmark to "not saved" forever until a page refresh.
+  const hasUserActedRef = useRef(false)
+
   const tagSuggestions = userTags.filter(
     t => !tags.includes(t) && t.includes(tagInput.toLowerCase().trim()),
   )
@@ -410,7 +417,9 @@ export default function RecipeView({
           // Order makes the truncation deterministic (newest tags surface first).
           supabase.from('recipes').select('tags').eq('user_id', authUser.id).order('created_at', { ascending: false }).limit(2000),
         ])
-        if (!initialSaved) setSaved(!!(savedResult as { data: unknown }).data)
+        if (!initialSaved && !hasUserActedRef.current) {
+          setSaved(!!(savedResult as { data: unknown }).data)
+        }
         const tagRows = tagsResult.data
         if (tagRows) {
           const flat = [
@@ -464,6 +473,10 @@ export default function RecipeView({
     setChecked(prev => { const next = new Set(prev); next.has(i) ? next.delete(i) : next.add(i); return next })
 
   const toggleSave = async () => {
+    // Mark that the user has taken an explicit save action — the mount-time
+    // saved-check (above) must no longer be allowed to overwrite local state.
+    hasUserActedRef.current = true
+
     let currentUser = user
     if (!currentUser) {
       const { data: { user: freshUser } } = await supabase.auth.getUser()
@@ -474,14 +487,27 @@ export default function RecipeView({
 
     if (saved) {
       setSaved(false)   // optimistic — UI responds instantly
-      await supabase.from('recipes').delete().eq('id', recipe.id)
+      const { error } = await supabase.from('recipes').delete().eq('id', recipe.id)
+      if (error) {
+        // Roll back so the bookmark reflects reality, and log for diagnosis.
+        setSaved(true)
+        console.error('[savoryshelf] delete failed:', error.message)
+      }
     } else {
       setSaved(true)    // optimistic — UI responds instantly
-      await supabase.from('recipes').insert(toDbRecipe(recipe, currentUser.id))
+      const { error } = await supabase.from('recipes').insert(toDbRecipe(recipe, currentUser.id))
+      if (error) {
+        setSaved(false)
+        console.error('[savoryshelf] save failed:', error.message)
+      }
     }
   }
 
   const handleShare = async () => {
+    // Share also performs a save when the recipe isn't yet in the user's
+    // collection — same race-vs-saved-check concern as toggleSave.
+    hasUserActedRef.current = true
+
     let currentUser = user
     if (!currentUser) {
       const { data: { user: freshUser } } = await supabase.auth.getUser()
