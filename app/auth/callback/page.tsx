@@ -21,14 +21,24 @@ function Callback() {
       return
     }
 
-    // ── Intent marker check (hard failure) ───────────────
-    // The marker is written to localStorage when the user opens the sign-in
-    // modal. Its presence confirms the link was clicked in the same browser
-    // that initiated the flow, guarding against link-hijacking / open
-    // redirect confusion.
+    // ── Intent marker check (UX hardening, NOT a security control) ──
+    // This marker is client-controlled localStorage state set by AuthModal
+    // when the user starts the sign-in flow. It is NOT cryptographically
+    // bound to the auth transaction and would not stop an attacker with
+    // same-origin script execution (e.g. XSS). The actual auth security
+    // boundary is Supabase PKCE — the `code` here is bound to a server-
+    // coordinated `code_verifier` stored in the session cookie, and the
+    // exchangeCodeForSession() call below performs that binding.
+    //
+    // What this check actually provides:
+    //   • Catches the "link opened in a different browser/device" foot-gun
+    //     with a friendly error instead of a confusing silent failure.
+    //   • Enforces a 10-minute replay window with a clear message instead
+    //     of an opaque PKCE rejection.
     //
     // If localStorage is unavailable (rare: some WebViews) we allow through
-    // — we can't reliably enforce the check in that environment.
+    // and rely entirely on PKCE — deliberate, since PKCE remains the
+    // primary control regardless of marker state.
     try {
       const stateTs = localStorage.getItem('savoryshelf-login-state')
       localStorage.removeItem('savoryshelf-login-state')

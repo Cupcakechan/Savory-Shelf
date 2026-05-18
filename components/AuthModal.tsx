@@ -22,8 +22,11 @@ export default function AuthModal({ onClose }: Props) {
     setLoading(true)
     setError('')
 
-    // Store a login intent marker so the callback page can confirm this
-    // sign-in was initiated from this browser (defense-in-depth on top of PKCE).
+    // Store a login intent marker — UX hardening only, NOT a security
+    // primitive. The auth callback page reads this to catch the "link
+    // opened in a different browser" foot-gun with a friendly error.
+    // The actual auth security boundary is Supabase PKCE bound to the
+    // session cookie below — this marker sits on top of that for UX.
     try {
       localStorage.setItem('savoryshelf-login-state', String(Date.now()))
     } catch (_) {}
