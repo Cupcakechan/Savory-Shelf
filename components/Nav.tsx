@@ -170,6 +170,14 @@ export default function Nav() {
   // When the magic-link callback tab signals via localStorage, pick up the
   // new session, close the auth modal, and navigate to the main app so the
   // user lands somewhere useful without any manual interaction.
+  //
+  // EXCEPTION: if the user is currently on '/' we stay put. The home page
+  // holds in-memory state for an imported recipe preview (app/page.tsx
+  // useState), and forcing navigation would unmount that and discard the
+  // recipe — exactly the "users must refresh and re-import after signing
+  // in" symptom. window.location.pathname is read at decision time (rather
+  // than via usePathname above) because the handler is async; the path
+  // could have changed during the awaited getSession().
   useEffect(() => {
     const handler = async (e: StorageEvent) => {
       if (e.key !== 'savoryshelf-auth-success' || !e.newValue) return
@@ -178,7 +186,9 @@ export default function Nav() {
       setUser(session?.user ?? null)
       if (session?.user) {
         setShowAuth(false)
-        router.push('/my-recipes')
+        if (window.location.pathname !== '/') {
+          router.push('/my-recipes')
+        }
       }
     }
     window.addEventListener('storage', handler)
