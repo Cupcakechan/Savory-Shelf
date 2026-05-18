@@ -17,9 +17,34 @@ const dmSans = DM_Sans({
   display: 'swap',
 })
 
+// Canonical site URL — used to absolute-ify every relative URL in metadata
+// (canonical link, OG url, Twitter url, share-page links). Set this in
+// Vercel → Environment Variables as NEXT_PUBLIC_SITE_URL=https://www.savoryshelf.com
+// (no trailing slash). When unset, metadataBase is omitted and Next.js falls
+// back to Host-header inference at request time, which causes silent canonical
+// drift across hostnames (the bug that triggered the Apr 2026 GSC indexing
+// failure — see docs/seo-canonical-fix.md if/when written).
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '')
+
 export const metadata: Metadata = {
+  ...(siteUrl && { metadataBase: new URL(siteUrl) }),
   title: 'SavoryShelf | by Cocolito Collective',
   description: 'Save and organise recipes from anywhere — by Cocolito Collective.',
+  // Homepage canonical. Inherited by sub-routes that don't override:
+  //   • /share/[id] → overrides with its own dynamic canonical (see app/share/[id]/page.tsx)
+  //   • /my-recipes, /my-pantry, /shopping-list → disallowed in robots.ts AND
+  //     middleware-redirect to '/' for anon users, so the inherited '/' is correct
+  //   • /auth/callback → disallowed in robots.ts; transient redirect target
+  // If you add a NEW public sub-route in future, override canonical in its
+  // own page metadata so it doesn't silently inherit '/'.
+  alternates: { canonical: '/' },
+  openGraph: {
+    title:       'SavoryShelf | by Cocolito Collective',
+    description: 'Save and organise recipes from anywhere — by Cocolito Collective.',
+    siteName:    'SavoryShelf',
+    type:        'website',
+    url:         '/',
+  },
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

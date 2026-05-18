@@ -36,6 +36,14 @@ export async function middleware(request: NextRequest) {
   const nonce = generateNonce()
   const csp   = buildCsp(nonce)
 
+  // Detect Vercel's auto-generated *.vercel.app hostnames so we can mark
+  // those responses noindex/nofollow. Google was discovering and indexing
+  // savory-shelf-iota.vercel.app alongside www.savoryshelf.com, creating
+  // duplicate-content signals across hostnames. X-Robots-Tag on these
+  // responses tells crawlers to ignore them without affecting the canonical
+  // custom domain.
+  const isVercelPreviewHost = (request.headers.get('host') ?? '').endsWith('.vercel.app')
+
   // Pass the nonce in request headers so Next.js server components can
   // read it via headers() and apply it to any inline scripts they render.
   const requestHeaders = new Headers(request.headers)
@@ -43,6 +51,7 @@ export async function middleware(request: NextRequest) {
 
   let response = NextResponse.next({ request: { headers: requestHeaders } })
   response.headers.set('content-security-policy', csp)
+  if (isVercelPreviewHost) response.headers.set('x-robots-tag', 'noindex, nofollow')
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -58,6 +67,7 @@ export async function middleware(request: NextRequest) {
           // they survive the cookie-refresh path.
           response = NextResponse.next({ request: { headers: requestHeaders } })
           response.headers.set('content-security-policy', csp)
+          if (isVercelPreviewHost) response.headers.set('x-robots-tag', 'noindex, nofollow')
           cookiesToSet.forEach(({ name, value, options }) =>
             response.cookies.set(name, value, options)
           )
