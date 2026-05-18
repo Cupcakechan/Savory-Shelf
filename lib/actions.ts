@@ -647,8 +647,13 @@ export async function importRecipe(
     }
     if (err instanceof Error && err.name === 'TimeoutError') {
       secLog('warn', { event: 'import_timeout', url: target })
+      return { error: 'The page took too long to respond. Please try again.' }
     }
-    return { error: `Could not fetch the page: ${msg}` }
+    // Generic fallback — preserve the full raw error in the security log so we
+    // can debug, but return a coarse, user-friendly message so we don't leak
+    // network/DNS/fetch-internal detail that could aid targeted probing.
+    secLog('warn', { event: 'import_generic_error', url: target, error: msg })
+    return { error: 'Could not fetch the page. Please try again or check the URL.' }
   }
 }
 
@@ -791,7 +796,11 @@ export async function reparseRecipeWithAi(
     }
     if (err instanceof Error && err.name === 'TimeoutError') {
       secLog('warn', { event: 'reparse_timeout', url: target })
+      return { error: 'The page took too long to respond. Please try again.' }
     }
-    return { error: `Could not re-parse the page: ${msg}` }
+    // Generic fallback — full raw error stays in the security log; client
+    // receives a coarse message. Same posture as importRecipe.
+    secLog('warn', { event: 'reparse_generic_error', url: target, error: msg })
+    return { error: 'Could not re-parse the page. Please try again.' }
   }
 }
