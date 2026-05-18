@@ -49,34 +49,48 @@ function Callback() {
       // localStorage unavailable — allow through
     }
 
-    // ── Exchange the PKCE code ────────────────────────────
+    // ── Resolve the session ─────────────────────────────
     //
-    // After a successful exchange, we attempt window.close() — this works
-    // only for the rare case where the email client opened this tab via
-    // window.open(). Most clients open via a plain link click, which
-    // browsers refuse to close from script. So we set status='done' and
-    // render an explicit "return to your original tab" message instead of
-    // silently routing to /, which used to leave users on the magic-link
-    // tab wondering whether anything happened.
+    // Magic-link emails are often pre-fetched by email clients (Gmail,
+    // Outlook, Apple Mail) or enterprise security scanners — they make
+    // a silent GET to the link to preview/scan it. Since PKCE codes are
+    // single-use, the prefetch consumes the code and establishes a real
+    // session on this domain. By the time the user actually clicks, the
+    // exchange call returns "code already used" even though they're
+    // genuinely signed in.
     //
-    // The localStorage write below fires a 'storage' event in any other
-    // tab on this origin — Nav.tsx picks that up and updates auth state
-    // there without forcing navigation (when the other tab is on '/').
-    supabase.auth.exchangeCodeForSession(code)
-      .then(({ error }) => {
-        if (error) {
+    // So we treat *session existence* as the source of truth, not
+    // *exchange success*:
+    //   1. Check for an existing session — if it's there, we're already
+    //      signed in (prefetch path); skip exchange and show 'done'.
+    //   2. Otherwise, attempt exchange and recheck the session.
+    //   3. If after both attempts no session exists, that's a real error.
+    ;(async () => {
+      try {
+        let { data: { session } } = await supabase.auth.getSession()
+
+        if (!session) {
+          // Fire the exchange but don't trust its error result alone — a
+          // parallel prefetch may have consumed the code and set the
+          // session under us. We re-check session state below.
+          await supabase.auth.exchangeCodeForSession(code).catch(() => {})
+          ;({ data: { session } } = await supabase.auth.getSession())
+        }
+
+        if (!session?.user) {
           setStatus('error')
           return
         }
+
         try {
           localStorage.setItem('savoryshelf-auth-success', String(Date.now()))
         } catch (_) {}
         try { window.close() } catch (_) {}
         setStatus('done')
-      })
-      .catch(() => {
+      } catch {
         setStatus('error')
-      })
+      }
+    })()
   }, [searchParams, router])
 
   // ── Loading spinner ───────────────────────────────────

@@ -44,10 +44,29 @@ function AuthSection({ user, showAuth, setShowAuth }: AuthSectionProps) {
   const handleSignOut = async () => {
     if (signingOut) return          // prevent double-clicks
     setSigningOut(true)
-    await supabase.auth.signOut()   // awaited — clears session cookie reliably
-    setSigningOut(false)
-    router.push('/')                // land on a clean page immediately
-    router.refresh()                // bust the Next.js router cache
+    try {
+      // Race against a 3s timeout. supabase.auth.signOut() clears local
+      // storage / cookies early in its call sequence, so even when the
+      // server round-trip hangs (flaky network, already-invalidated
+      // session) the user is effectively signed out locally. Without
+      // this race, a hang would leave the button stuck on "Signing
+      // out…" indefinitely — the user has to refresh to recover.
+      await Promise.race([
+        supabase.auth.signOut(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('signout timeout')), 3000),
+        ),
+      ])
+    } catch (err) {
+      // Server-side errors and the timeout above both land here. The
+      // local session is already cleared at this point, so we still
+      // navigate the user to a clean signed-out state below.
+      console.error('[savoryshelf] sign out:', err)
+    } finally {
+      setSigningOut(false)
+      router.push('/')                // land on a clean page immediately
+      router.refresh()                // bust the Next.js router cache
+    }
   }
 
   if (user) return (
