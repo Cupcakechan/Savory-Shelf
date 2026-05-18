@@ -186,17 +186,26 @@ export default function Nav() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // When the magic-link callback tab signals via localStorage, pick up the
-  // new session, close the auth modal, and navigate to the main app so the
-  // user lands somewhere useful without any manual interaction.
+  // When the magic-link callback signals via localStorage, pick up the
+  // new session and decide whether to navigate.
   //
-  // EXCEPTION: if the user is currently on '/' we stay put. The home page
-  // holds in-memory state for an imported recipe preview (app/page.tsx
-  // useState), and forcing navigation would unmount that and discard the
-  // recipe — exactly the "users must refresh and re-import after signing
-  // in" symptom. window.location.pathname is read at decision time (rather
-  // than via usePathname above) because the handler is async; the path
-  // could have changed during the awaited getSession().
+  // Notes:
+  //  • We deliberately don't close the auth modal here. AuthModal
+  //    subscribes to onAuthStateChange itself and switches to a clear
+  //    "You're signed in!" success state — much better UX than a
+  //    silently disappearing modal for users returning from their email
+  //    tab who need explicit confirmation that the link worked.
+  //  • If this tab is currently hidden (the user is almost certainly on
+  //    their inbox tab after clicking the magic link), we update the
+  //    document title to draw their attention back via the browser's
+  //    tab bar. The original title is restored the moment they switch
+  //    back, via a one-shot visibilitychange listener.
+  //  • If the user is currently on '/', we stay put — that page holds
+  //    in-memory imported-recipe-preview state (app/page.tsx useState)
+  //    and forcing navigation would discard it and require re-import.
+  //  • window.location.pathname is read at decision time (not the path
+  //    captured at handler-creation by usePathname) because the handler
+  //    is async; the path could change during the awaited getSession().
   useEffect(() => {
     const handler = async (e: StorageEvent) => {
       if (e.key !== 'savoryshelf-auth-success' || !e.newValue) return
@@ -204,7 +213,17 @@ export default function Nav() {
       const { data: { session } } = await supabase.auth.getSession()
       setUser(session?.user ?? null)
       if (session?.user) {
-        setShowAuth(false)
+        if (typeof document !== 'undefined' && document.hidden) {
+          const original = document.title
+          document.title = `✓ Signed in! · ${original}`
+          const restore = () => {
+            if (!document.hidden) {
+              document.title = original
+              document.removeEventListener('visibilitychange', restore)
+            }
+          }
+          document.addEventListener('visibilitychange', restore)
+        }
         if (window.location.pathname !== '/') {
           router.push('/my-recipes')
         }

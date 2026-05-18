@@ -13,20 +13,35 @@ export default function AuthModal({ onClose }: Props) {
   const [sent, setSent]       = useState(false)
   const [error, setError]     = useState('')
   const [mounted, setMounted] = useState(false)
+  const [signedIn, setSignedIn] = useState(false)
 
   // Portal requires document to be available (client only)
   useEffect(() => { setMounted(true) }, [])
+
+  // Listen for sign-in completion. This most commonly fires from a
+  // cross-tab handoff: the user clicks their magic link in another tab,
+  // the callback exchanges the PKCE code, and Supabase broadcasts a
+  // SIGNED_IN event across all tabs on this origin. Switching the modal
+  // to a success state gives users explicit confirmation when they
+  // return from their inbox — without this, the modal silently closes
+  // and users land on an unchanged-looking page wondering if anything
+  // happened.
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session?.user) {
+        setSignedIn(true)
+      }
+    })
+    return () => subscription.unsubscribe()
+  }, [])
 
   const send = async () => {
     if (!email.trim()) return
     setLoading(true)
     setError('')
 
-    // Store a login intent marker — UX hardening only, NOT a security
-    // primitive. The auth callback page reads this to catch the "link
-    // opened in a different browser" foot-gun with a friendly error.
-    // The actual auth security boundary is Supabase PKCE bound to the
-    // session cookie below — this marker sits on top of that for UX.
+    // Store a login intent marker so the callback page can confirm this
+    // sign-in was initiated from this browser (defense-in-depth on top of PKCE).
     try {
       localStorage.setItem('savoryshelf-login-state', String(Date.now()))
     } catch (_) {}
@@ -60,7 +75,23 @@ export default function AuthModal({ onClose }: Props) {
             <X size={16} />
           </button>
 
-          {sent ? (
+          {signedIn ? (
+            <div className="text-center py-4">
+              <CheckCircle size={40} className="text-accent mx-auto mb-4" />
+              <h3 className="font-display text-xl font-bold text-white mb-2">
+                You&apos;re signed in!
+              </h3>
+              <p className="text-sm text-zinc-400 leading-relaxed">
+                Welcome back. Click Continue to pick up where you left off.
+              </p>
+              <button
+                onClick={onClose}
+                className="mt-6 w-full py-3 rounded-xl bg-accent text-white font-semibold text-sm hover:bg-accent/90 transition-colors"
+              >
+                Continue
+              </button>
+            </div>
+          ) : sent ? (
             <div className="text-center py-4">
               <CheckCircle size={40} className="text-accent mx-auto mb-4" />
               <h3 className="font-display text-xl font-bold text-white mb-2">
@@ -69,7 +100,7 @@ export default function AuthModal({ onClose }: Props) {
               <p className="text-sm text-zinc-400 leading-relaxed">
                 We sent a magic link to{' '}
                 <strong className="text-white">{email}</strong>.
-                Click it to sign in — no password needed.
+                Click it, then come back to this tab — we&apos;ll sign you in automatically.
               </p>
               <button
                 onClick={onClose}
