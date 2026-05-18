@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import {
   Clock, Users, Check, Bookmark, BookmarkCheck, ChevronLeft,
   ExternalLink, NotebookPen, Share2, Minus, Plus, Languages,
-  Sparkles, X, CheckCircle, Tag, Loader2,
+  Sparkles, X, CheckCircle, Tag, ListPlus,
 } from 'lucide-react'
 import type { User } from '@supabase/supabase-js'
 import { Recipe } from '@/lib/types'
@@ -13,9 +13,10 @@ import {
   translateRecipe, suggestSubstitutes,
   type TranslateResult, type SubstitutesResult,
 } from '@/lib/ai'
-import { migrateRecipeImage, reparseRecipeWithAi } from '@/lib/actions'
+import { migrateRecipeImage } from '@/lib/actions'
 import KitchenNotesModal from './KitchenNotesModal'
 import AuthModal from './AuthModal'
+import AddToListModal from './AddToListModal'
 
 // ── Time formatter ────────────────────────────────────────
 
@@ -344,6 +345,8 @@ export default function RecipeView({
   const [showShare, setShowShare]         = useState(false)
   const [shareUrl, setShareUrl]           = useState('')
   const [showAuth, setShowAuth]           = useState(false)
+  const [showAddToList, setShowAddToList] = useState(false)
+  const [addedTo, setAddedTo]             = useState('')
   const [aiLoading, setAiLoading]               = useState(false)
   const [aiError, setAiError]                   = useState('')
   const [translateResult, setTranslateResult]   = useState<TranslateResult | null>(null)
@@ -351,11 +354,6 @@ export default function RecipeView({
   const [substitutesResult, setSubstitutesResult] = useState<SubstitutesResult | null>(null)
   const [substitutesCopied, setSubstitutesCopied] = useState(false)
   const [unit, setUnitRaw] = useState<'us' | 'metric'>('us')
-
-  // AI re-parse state — the "Re-parse with AI" escape hatch shown on
-  // fresh URL imports when the deterministic parser produces poor output.
-  const [reparsePending, setReparsePending] = useState(false)
-  const [reparseError,   setReparseError]   = useState('')
 
   const [tags, setTags]                 = useState<string[]>(initialRecipe.tags ?? [])
   const [userTags, setUserTags]         = useState<string[]>([])
@@ -508,35 +506,16 @@ export default function RecipeView({
     }
   }
 
-  // Re-parse the source URL through Grok. Only available for fresh
-  // imports (initialSaved=false) that have a sourceUrl. Replaces the
-  // in-memory recipe with the AI-parsed version, preserving the id
-  // (so subsequent Save uses the same UUID) and falling back to the
-  // current image if Grok didn't return one.
-  const handleReparse = async () => {
-    if (!recipe.sourceUrl || reparsePending) return
-    setReparseError('')
-    setReparsePending(true)
-    try {
-      const { recipe: fresh, error } = await reparseRecipeWithAi(recipe.sourceUrl)
-      if (error || !fresh) {
-        setReparseError(error || 'Could not re-parse. Please try again.')
-        return
-      }
-      setRecipe(prev => ({
-        ...fresh,
-        id: prev.id,
-        sourceUrl: prev.sourceUrl,
-        image: (fresh.image && fresh.image !== '') ? fresh.image : prev.image,
-      }))
-      // Reset the user's checked-ingredients set since the ingredient list
-      // may have completely changed shape.
-      setChecked(new Set())
-    } catch (err) {
-      setReparseError(err instanceof Error ? err.message : 'Could not re-parse. Please try again.')
-    } finally {
-      setReparsePending(false)
-    }
+  // One-tap "Add all ingredients to a shopping list" flow — mirrors the
+  // RecipeCard pattern so users get the same affordance whether they're
+  // browsing the grid or looking at a recipe in full. AddToListModal handles
+  // the unauthenticated case internally ("Please sign in to create a shopping
+  // list."), so no auth gate is needed at the button.
+  const handleAddToList = () => setShowAddToList(true)
+  const handleAdded = (listName: string) => {
+    setShowAddToList(false)
+    setAddedTo(listName)
+    setTimeout(() => setAddedTo(''), 2200)
   }
 
   const handleShare = async () => {
@@ -688,6 +667,9 @@ export default function RecipeView({
               <button onClick={() => setShowNotes(true)} title="My Kitchen Notes" className="p-3 sm:p-2.5 rounded-xl border border-border text-muted hover:border-accent/40 hover:text-accent transition-all">
                 <NotebookPen size={16} />
               </button>
+              <button onClick={handleAddToList} title="Add all ingredients to a shopping list" aria-label="Add all ingredients to a shopping list" className="p-3 sm:p-2.5 rounded-xl border border-border text-muted hover:border-accent/40 hover:text-accent transition-all">
+                <ListPlus size={16} />
+              </button>
               <button onClick={handleShare} title="Share recipe" className="p-3 sm:p-2.5 rounded-xl border border-border text-muted hover:border-accent/40 hover:text-accent transition-all">
                 <Share2 size={16} />
               </button>
@@ -728,37 +710,6 @@ export default function RecipeView({
             </button>
           </div>
         </div>
-
-        {/* AI re-parse escape hatch — fresh URL imports only */}
-        {!readOnly && !initialSaved && recipe.sourceUrl && (
-          <div className="bg-accent/8 border border-accent/20 rounded-2xl px-4 py-3 mb-6">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <Sparkles size={16} className="text-accent flex-shrink-0" />
-                <p className="text-xs font-medium text-text/85">
-                  Doesn&apos;t look right? Let AI re-parse it.
-                </p>
-              </div>
-              <button
-                onClick={handleReparse}
-                disabled={reparsePending}
-                className="inline-flex items-center gap-1.5 text-xs font-semibold text-accent hover:text-accent/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0 py-1 px-2 active:scale-95"
-              >
-                {reparsePending ? (
-                  <>
-                    <Loader2 size={13} className="animate-spin" />
-                    Re-parsing…
-                  </>
-                ) : (
-                  <>Re-parse with AI</>
-                )}
-              </button>
-            </div>
-            {reparseError && (
-              <p className="text-xs text-highlight mt-2 ml-6">{reparseError}</p>
-            )}
-          </div>
-        )}
 
         {/* Missing ingredients banner — only shown when opened from the Pantry page */}
         {missingIngredients && missingIngredients.length > 0 && (
@@ -945,10 +896,26 @@ export default function RecipeView({
       )}
       {showShare       && <ShareModal url={shareUrl} onClose={() => setShowShare(false)} />}
       {showAuth        && <AuthModal onClose={() => setShowAuth(false)} />}
+      {showAddToList   && <AddToListModal ingredients={recipe.ingredients} onClose={() => setShowAddToList(false)} onAdded={handleAdded} />}
       {aiLoading       && <AiLoadingModal />}
       {aiError         && <AiErrorModal message={aiError} onClose={() => setAiError('')} />}
       {translateResult && <TranslateModal result={translateResult} onClose={() => setTranslateResult(null)} onApply={applyTranslation} applied={translateApplied} />}
       {substitutesResult && <SubstitutesModal result={substitutesResult} onClose={() => setSubstitutesResult(null)} onCopyToNotes={copySubstitutesToNotes} copied={substitutesCopied} />}
+
+      {/*
+        "Added to list" toast. Fixed to the viewport bottom so it's visible
+        without needing to scroll, with a bottom offset on mobile (bottom-20)
+        to sit above the BottomTabs nav bar in Nav.tsx (~5rem tall). Desktop
+        (bottom-4) has no nav bar to clear. pointer-events-none lets the user
+        keep scrolling underneath. Auto-dismisses after 2.2s via handleAdded.
+      */}
+      {addedTo && (
+        <div className="fixed bottom-20 sm:bottom-4 inset-x-0 z-50 flex justify-center px-4 pointer-events-none">
+          <div className="bg-emerald-500 text-white text-sm font-semibold rounded-full shadow-lg px-5 py-2.5">
+            ✓ Added to {addedTo}
+          </div>
+        </div>
+      )}
     </>
   )
 }
