@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 
 // ── Inner component ───────────────────────────────────────
 
-type Status = 'loading' | 'done' | 'intent-missing' | 'intent-expired'
+type Status = 'loading' | 'done' | 'intent-missing' | 'intent-expired' | 'error'
 
 function Callback() {
   const router       = useRouter()
@@ -21,24 +21,14 @@ function Callback() {
       return
     }
 
-    // ── Intent marker check (UX hardening, NOT a security control) ──
-    // This marker is client-controlled localStorage state set by AuthModal
-    // when the user starts the sign-in flow. It is NOT cryptographically
-    // bound to the auth transaction and would not stop an attacker with
-    // same-origin script execution (e.g. XSS). The actual auth security
-    // boundary is Supabase PKCE — the `code` here is bound to a server-
-    // coordinated `code_verifier` stored in the session cookie, and the
-    // exchangeCodeForSession() call below performs that binding.
-    //
-    // What this check actually provides:
-    //   • Catches the "link opened in a different browser/device" foot-gun
-    //     with a friendly error instead of a confusing silent failure.
-    //   • Enforces a 10-minute replay window with a clear message instead
-    //     of an opaque PKCE rejection.
+    // ── Intent marker check (hard failure) ───────────────
+    // The marker is written to localStorage when the user opens the sign-in
+    // modal. Its presence confirms the link was clicked in the same browser
+    // that initiated the flow, guarding against link-hijacking / open
+    // redirect confusion.
     //
     // If localStorage is unavailable (rare: some WebViews) we allow through
-    // and rely entirely on PKCE — deliberate, since PKCE remains the
-    // primary control regardless of marker state.
+    // — we can't reliably enforce the check in that environment.
     try {
       const stateTs = localStorage.getItem('savoryshelf-login-state')
       localStorage.removeItem('savoryshelf-login-state')
@@ -60,18 +50,32 @@ function Callback() {
     }
 
     // ── Exchange the PKCE code ────────────────────────────
+    //
+    // After a successful exchange, we attempt window.close() — this works
+    // only for the rare case where the email client opened this tab via
+    // window.open(). Most clients open via a plain link click, which
+    // browsers refuse to close from script. So we set status='done' and
+    // render an explicit "return to your original tab" message instead of
+    // silently routing to /, which used to leave users on the magic-link
+    // tab wondering whether anything happened.
+    //
+    // The localStorage write below fires a 'storage' event in any other
+    // tab on this origin — Nav.tsx picks that up and updates auth state
+    // there without forcing navigation (when the other tab is on '/').
     supabase.auth.exchangeCodeForSession(code)
       .then(({ error }) => {
-        if (!error) {
-          try {
-            localStorage.setItem('savoryshelf-auth-success', String(Date.now()))
-          } catch (_) {}
-          window.close()
+        if (error) {
+          setStatus('error')
+          return
         }
+        try {
+          localStorage.setItem('savoryshelf-auth-success', String(Date.now()))
+        } catch (_) {}
+        try { window.close() } catch (_) {}
+        setStatus('done')
       })
-      .finally(() => {
-        // Fallback: if window.close() had no effect, navigate home.
-        setTimeout(() => router.replace('/'), 300)
+      .catch(() => {
+        setStatus('error')
       })
   }, [searchParams, router])
 
@@ -137,7 +141,57 @@ function Callback() {
     )
   }
 
-  // status === 'done' — window.close() is in flight; this rarely renders
+  // ── Success: tell the user to go back to the original tab ────
+
+  if (status === 'done') {
+    return (
+      <div className="flex items-center justify-center min-h-[calc(100vh-3.5rem)] px-4">
+        <div className="max-w-sm w-full text-center">
+          <span className="text-4xl mb-5 block select-none">✅</span>
+          <h2 className="font-display text-xl font-bold text-text mb-2">
+            You&apos;re signed in
+          </h2>
+          <p className="text-sm text-muted leading-relaxed mb-6">
+            If you started importing a recipe, return to that tab to finish
+            saving it. You can safely close this tab.
+          </p>
+          <button
+            onClick={() => router.replace('/my-recipes')}
+            className="w-full py-3 rounded-xl bg-accent text-white text-sm font-semibold hover:bg-accent/90 transition-colors"
+          >
+            Continue to My Recipes
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Failure: exchange rejected or threw ───────────────
+
+  if (status === 'error') {
+    return (
+      <div className="flex items-center justify-center min-h-[calc(100vh-3.5rem)] px-4">
+        <div className="max-w-sm w-full text-center">
+          <span className="text-4xl mb-5 block select-none">⚠️</span>
+          <h2 className="font-display text-xl font-bold text-text mb-2">
+            Sign in failed
+          </h2>
+          <p className="text-sm text-muted leading-relaxed mb-6">
+            The magic link may have expired or already been used. Please
+            request a new one.
+          </p>
+          <button
+            onClick={() => router.replace('/')}
+            className="w-full py-3 rounded-xl bg-accent text-white text-sm font-semibold hover:bg-accent/90 transition-colors"
+          >
+            Request a new link
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // Unreachable in normal flow — every Status value above renders explicitly.
   return null
 }
 
