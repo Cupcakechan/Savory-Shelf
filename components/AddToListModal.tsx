@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { X, Plus, ListPlus, AlertCircle, Loader2 } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
+import { X, Plus, ListPlus, AlertCircle, Loader2, Check } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { aggregateIntoList, type ExistingItem } from '@/lib/shopping-aggregator'
 
@@ -16,16 +16,65 @@ interface Props {
   onClose:     () => void
   /** Called after a successful add with the destination list's display name. */
   onAdded:     (listName: string) => void
+  /**
+   * When true, the modal opens with a per-ingredient selection step before
+   * the list-pick / list-create step. Used by RecipeView so users can choose
+   * exactly which ingredients to add. RecipeCard omits this for the existing
+   * one-tap "add everything" behaviour on the grid.
+   */
+  allowSelection?: boolean
 }
 
-export default function AddToListModal({ ingredients, onClose, onAdded }: Props) {
+export default function AddToListModal({ ingredients, onClose, onAdded, allowSelection = false }: Props) {
   const [lists, setLists]     = useState<ShoppingListRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState('')
   const [saving, setSaving]   = useState(false)
 
-  const [mode, setMode]       = useState<'pick' | 'create'>('pick')
+  const [mode, setMode]       = useState<'select' | 'pick' | 'create'>(
+    allowSelection ? 'select' : 'pick',
+  )
   const [newName, setNewName] = useState('')
+
+  // Which of the provided ingredients are currently selected for adding.
+  // Defaults to all (lazy init avoids rebuilding the Set on every render).
+  // Only meaningful when allowSelection=true, but maintained either way
+  // so the downstream aggregator math is uniform.
+  const [selectedIndices, setSelectedIndices] = useState<Set<number>>(
+    () => new Set(ingredients.map((_, i) => i)),
+  )
+
+  // Ordered subset of `ingredients` reflecting the user's checkbox choices.
+  // Used everywhere downstream (helper text count, aggregator input, Continue
+  // button label) so the count math is in one place.
+  const selectedIngredients = useMemo(
+    () => ingredients.filter((_, i) => selectedIndices.has(i)),
+    [ingredients, selectedIndices],
+  )
+
+  const toggleIngredient = (i: number) => {
+    setSelectedIndices(prev => {
+      const next = new Set(prev)
+      if (next.has(i)) next.delete(i)
+      else next.add(i)
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    setSelectedIndices(prev =>
+      prev.size === ingredients.length
+        ? new Set()
+        : new Set(ingredients.map((_, i) => i)),
+    )
+  }
+
+  // Continue from 'select'. If the user has no lists yet, jump straight to
+  // 'create' (same "skip the empty list-picker" convenience the modal has
+  // always had on mount); otherwise show the list picker.
+  const advanceFromSelect = () => {
+    setMode(lists.length === 0 ? 'create' : 'pick')
+  }
 
   // ── Load lists on mount ─────────────────────────────────
 
@@ -42,8 +91,10 @@ export default function AddToListModal({ ingredients, onClose, onAdded }: Props)
         } else {
           const rows = (data ?? []) as ShoppingListRow[]
           setLists(rows)
-          // If the user has no lists yet, jump straight to the create form.
-          if (rows.length === 0) setMode('create')
+          // If the user has no lists yet, jump straight to the create form —
+          // unless they're starting in 'select' mode, in which case
+          // advanceFromSelect() will make this decision after Continue.
+          if (!allowSelection && rows.length === 0) setMode('create')
         }
         setLoading(false)
       })
@@ -66,7 +117,7 @@ export default function AddToListModal({ ingredients, onClose, onAdded }: Props)
       if (fetchErr) throw fetchErr
 
       const existing = (existingData ?? []) as ExistingItem[]
-      const { inserts, updates } = aggregateIntoList(existing, ingredients, listId)
+      const { inserts, updates } = aggregateIntoList(existing, selectedIngredients, listId)
 
       // Inserts go in a single batched call. Updates are one per row — typical
       // count is small (≤ a handful), so the per-row cost is fine.
@@ -152,15 +203,50 @@ export default function AddToListModal({ ingredients, onClose, onAdded }: Props)
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
-          <p className="text-xs text-muted leading-relaxed mb-5">
-            Adding <span className="text-text font-semibold">{ingredients.length}</span> ingredient{ingredients.length !== 1 ? 's' : ''}.
-            Matching items will be combined automatically.
-          </p>
+          {mode === 'select' ? (
+            <p className="text-xs text-muted leading-relaxed mb-5">
+              Tap to deselect any ingredients you don&apos;t need to add.
+            </p>
+          ) : (
+            <p className="text-xs text-muted leading-relaxed mb-5">
+              Adding <span className="text-text font-semibold">{selectedIngredients.length}</span> ingredient{selectedIngredients.length !== 1 ? 's' : ''}.
+              Matching items will be combined automatically.
+            </p>
+          )}
 
           {loading ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 size={20} className="animate-spin text-muted" />
             </div>
+          ) : mode === 'select' ? (
+            <>
+              <div className="space-y-1.5 mb-4">
+                {ingredients.map((ing, i) => {
+                  const isOn = selectedIndices.has(i)
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => toggleIngredient(i)}
+                      className="w-full text-left flex items-start gap-3 bg-surface border border-border rounded-xl px-4 py-3 hover:border-accent/40 active:scale-[.99] transition-all"
+                    >
+                      <span className={`flex-shrink-0 mt-0.5 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${
+                        isOn ? 'bg-accent border-accent' : 'border-border'
+                      }`}>
+                        {isOn && <Check size={12} className="text-white" strokeWidth={3} />}
+                      </span>
+                      <span className="text-sm text-text leading-snug">{ing}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              <button
+                onClick={toggleSelectAll}
+                className="text-xs text-muted hover:text-text underline underline-offset-2 transition-colors"
+              >
+                {selectedIndices.size === ingredients.length ? 'Deselect all' : 'Select all'}
+              </button>
+            </>
           ) : mode === 'pick' ? (
             <>
               <div className="space-y-2 mb-4">
@@ -183,6 +269,15 @@ export default function AddToListModal({ ingredients, onClose, onAdded }: Props)
                 <Plus size={14} />
                 Create new list
               </button>
+              {allowSelection && (
+                <button
+                  onClick={() => setMode('select')}
+                  disabled={saving}
+                  className="block mt-3 text-xs text-muted hover:text-text underline underline-offset-2 transition-colors disabled:opacity-50"
+                >
+                  ← Back to ingredient selection
+                </button>
+              )}
             </>
           ) : (
             <>
@@ -203,9 +298,18 @@ export default function AddToListModal({ ingredients, onClose, onAdded }: Props)
                 <button
                   onClick={() => { setMode('pick'); setNewName(''); setError('') }}
                   disabled={saving}
-                  className="text-xs text-muted hover:text-text underline underline-offset-2 transition-colors"
+                  className="block text-xs text-muted hover:text-text underline underline-offset-2 transition-colors disabled:opacity-50"
                 >
                   ← Pick an existing list
+                </button>
+              )}
+              {allowSelection && (
+                <button
+                  onClick={() => { setMode('select'); setNewName(''); setError('') }}
+                  disabled={saving}
+                  className="block mt-2 text-xs text-muted hover:text-text underline underline-offset-2 transition-colors disabled:opacity-50"
+                >
+                  ← Back to ingredient selection
                 </button>
               )}
             </>
@@ -219,7 +323,20 @@ export default function AddToListModal({ ingredients, onClose, onAdded }: Props)
           )}
         </div>
 
-        {/* Footer — only when creating */}
+        {/* Footer — Continue (select) or Create & Add (create). Pick mode
+            doesn't need a footer because each list-row is itself the action. */}
+        {mode === 'select' && !loading && (
+          <div className="px-6 py-5 border-t border-border flex-shrink-0">
+            <button
+              onClick={advanceFromSelect}
+              disabled={selectedIngredients.length === 0}
+              className="w-full py-3 rounded-xl bg-accent text-white text-sm font-semibold hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[.98]"
+            >
+              Continue with {selectedIngredients.length} ingredient{selectedIngredients.length !== 1 ? 's' : ''}
+            </button>
+          </div>
+        )}
+
         {mode === 'create' && !loading && (
           <div className="px-6 py-5 border-t border-border flex-shrink-0">
             <button

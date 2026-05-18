@@ -506,11 +506,12 @@ export default function RecipeView({
     }
   }
 
-  // One-tap "Add all ingredients to a shopping list" flow — mirrors the
+  // One-tap "Add ingredients to a shopping list" flow — mirrors the
   // RecipeCard pattern so users get the same affordance whether they're
   // browsing the grid or looking at a recipe in full. AddToListModal handles
   // the unauthenticated case internally ("Please sign in to create a shopping
-  // list."), so no auth gate is needed at the button.
+  // list."), so no auth gate is needed at the button. On RecipeView the
+  // modal opens with allowSelection so users can choose which ingredients.
   const handleAddToList = () => setShowAddToList(true)
   const handleAdded = (listName: string) => {
     setShowAddToList(false)
@@ -667,7 +668,7 @@ export default function RecipeView({
               <button onClick={() => setShowNotes(true)} title="My Kitchen Notes" className="p-3 sm:p-2.5 rounded-xl border border-border text-muted hover:border-accent/40 hover:text-accent transition-all">
                 <NotebookPen size={16} />
               </button>
-              <button onClick={handleAddToList} title="Add all ingredients to a shopping list" aria-label="Add all ingredients to a shopping list" className="p-3 sm:p-2.5 rounded-xl border border-border text-muted hover:border-accent/40 hover:text-accent transition-all">
+              <button onClick={handleAddToList} title="Add ingredients to a shopping list" aria-label="Add ingredients to a shopping list" className="p-3 sm:p-2.5 rounded-xl border border-border text-muted hover:border-accent/40 hover:text-accent transition-all">
                 <ListPlus size={16} />
               </button>
               <button onClick={handleShare} title="Share recipe" className="p-3 sm:p-2.5 rounded-xl border border-border text-muted hover:border-accent/40 hover:text-accent transition-all">
@@ -896,7 +897,7 @@ export default function RecipeView({
       )}
       {showShare       && <ShareModal url={shareUrl} onClose={() => setShowShare(false)} />}
       {showAuth        && <AuthModal onClose={() => setShowAuth(false)} />}
-      {showAddToList   && <AddToListModal ingredients={recipe.ingredients} onClose={() => setShowAddToList(false)} onAdded={handleAdded} />}
+      {showAddToList   && <AddToListModal ingredients={recipe.ingredients} onClose={() => setShowAddToList(false)} onAdded={handleAdded} allowSelection />}
       {aiLoading       && <AiLoadingModal />}
       {aiError         && <AiErrorModal message={aiError} onClose={() => setAiError('')} />}
       {translateResult && <TranslateModal result={translateResult} onClose={() => setTranslateResult(null)} onApply={applyTranslation} applied={translateApplied} />}
