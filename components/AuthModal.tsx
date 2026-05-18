@@ -100,7 +100,9 @@ export default function AuthModal({ onClose }: Props) {
               <p className="text-sm text-zinc-400 leading-relaxed">
                 We sent a magic link to{' '}
                 <strong className="text-white">{email}</strong>.
-                Click it, then come back to this tab — we&apos;ll sign you in automatically.
+              </p>
+              <p className="text-sm text-zinc-400 leading-relaxed mt-3">
+                Click the link, then come back to this tab. You&apos;ll see a confirmation here once you&apos;re signed in.
               </p>
               <button
                 onClick={onClose}
