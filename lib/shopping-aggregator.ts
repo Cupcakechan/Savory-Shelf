@@ -9,6 +9,12 @@
 // Different keys (e.g. different units of the same ingredient) → insert
 // separately. The detail-view "Combine into one" flow handles unit
 // mismatches with a manual user-driven reconcile.
+//
+// Categorization: new inserts get a category from `categorize(name)`.
+// Existing-row updates DO NOT touch the category column — a user override
+// (set via the chip picker on the detail page) outlives recipe re-adds.
+
+import { categorize, type Category } from './shopping-categorizer'
 
 // ── Unit synonyms ─────────────────────────────────────────
 
@@ -213,6 +219,9 @@ export interface ExistingItem {
   checked:         boolean
 }
 
+// New rows include `category` so the DB stores the auto-classified aisle.
+// Update payloads (below) deliberately omit `category` to preserve any
+// manual override the user has applied on the detail page.
 interface InsertItem {
   id:              string
   list_id:         string
@@ -220,6 +229,7 @@ interface InsertItem {
   quantity:        string | null
   unit:            string | null
   checked:         false
+  category:        Category
 }
 
 interface UpdateItem {
@@ -296,7 +306,7 @@ export function aggregateIntoList(
       // Non-numeric on either side → fall through and insert separately.
     }
 
-    // 3. No suitable target → new row.
+    // 3. No suitable target → new row. Categorize from the cleaned name.
     const insert: InsertItem = {
       id:              crypto.randomUUID(),
       list_id:         listId,
@@ -304,6 +314,7 @@ export function aggregateIntoList(
       quantity:        parsed.quantity !== null ? formatQty(parsed.quantity) : null,
       unit:            parsed.unit,
       checked:         false,
+      category:        categorize(parsed.name),
     }
     inserts.push(insert)
     pendingInserts.set(key, insert)

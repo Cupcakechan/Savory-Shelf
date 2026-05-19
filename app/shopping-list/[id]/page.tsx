@@ -10,6 +10,13 @@ import {
 import type { User } from '@supabase/supabase-js'
 import { supabase, type DbShoppingList, type DbShoppingListItem } from '@/lib/supabase'
 import { normalizeName } from '@/lib/shopping-aggregator'
+import {
+  categorize,
+  CATEGORY_LABELS,
+  CATEGORY_ORDER,
+  type Category,
+} from '@/lib/shopping-categorizer'
+import CategoryPicker from '@/components/CategoryPicker'
 
 // Standard units shown in the per-row unit dropdown. Anything stored on a
 // row outside this set is appended dynamically to that row's options.
@@ -45,22 +52,27 @@ function formatItemForPrint(item: DbShoppingListItem): string {
 // Groups surface the "Multiple measures of X" amber container; singles
 // render as plain rows. The transform is purely visual — the DB rows
 // underneath are unchanged.
+//
+// Items with the same normalized name but different categories DO NOT
+// group together — a user override that moves one "flour" to Other while
+// the other stays in Pantry produces two distinct render units, each in
+// their respective section. This matches the user's explicit intent.
 type RenderUnit =
-  | { kind: 'single'; key: string; items: [DbShoppingListItem]; allChecked: boolean; sortKey: string }
-  | { kind: 'group';  key: string; items: DbShoppingListItem[];  allChecked: boolean; sortKey: string }
+  | { kind: 'single'; key: string; items: [DbShoppingListItem]; allChecked: boolean; sortKey: string; category: Category }
+  | { kind: 'group';  key: string; items: DbShoppingListItem[];  allChecked: boolean; sortKey: string; category: Category }
 
 function buildRenderUnits(items: DbShoppingListItem[]): RenderUnit[] {
-  // Group by the same normalised name the aggregator uses for matching, so
-  // items that "should be one ingredient" land together even when units differ.
-  const byName = new Map<string, DbShoppingListItem[]>()
+  // Group by category + normalized name. Items with same name but different
+  // category render as separate units (categories override grouping).
+  const byKey = new Map<string, DbShoppingListItem[]>()
   for (const item of items) {
-    const key = normalizeName(item.ingredient_name)
-    if (!byName.has(key)) byName.set(key, [])
-    byName.get(key)!.push(item)
+    const k = `${item.category}|${normalizeName(item.ingredient_name)}`
+    if (!byKey.has(k)) byKey.set(k, [])
+    byKey.get(k)!.push(item)
   }
 
   const units: RenderUnit[] = []
-  for (const [name, members] of byName) {
+  for (const [groupKey, members] of byKey) {
     // Within a group, sort: unchecked first, then by creation order.
     const sorted = [...members].sort((a, b) => {
       if (a.checked !== b.checked) return a.checked ? 1 : -1
@@ -72,6 +84,7 @@ function buildRenderUnits(items: DbShoppingListItem[]): RenderUnit[] {
     // sortKey: earliest unchecked created_at, else earliest overall. Keeps
     // groups positioned by their oldest active member.
     const sortKey = (firstUnchecked?.created_at ?? sorted[0]?.created_at ?? '')
+    const category = sorted[0].category
 
     if (sorted.length === 1) {
       units.push({
@@ -80,19 +93,23 @@ function buildRenderUnits(items: DbShoppingListItem[]): RenderUnit[] {
         items: [sorted[0]],
         allChecked,
         sortKey,
+        category,
       })
     } else {
       units.push({
         kind: 'group',
-        key: `group:${name}`,
+        key: `group:${groupKey}`,
         items: sorted,
         allChecked,
         sortKey,
+        category,
       })
     }
   }
 
-  // Top-level sort: not-allChecked first, then all-checked. Within each by sortKey.
+  // Sort within each category-bucket: not-allChecked first, then all-checked.
+  // Cross-category ordering is handled at render time via CATEGORY_ORDER, so
+  // we don't sort across categories here — only within.
   units.sort((a, b) => {
     if (a.allChecked !== b.allChecked) return a.allChecked ? 1 : -1
     return a.sortKey.localeCompare(b.sortKey)
@@ -130,6 +147,7 @@ function ItemRow({
   onUpdateLocal,
   onCommitRemote,
   onDelete,
+  onOpenCategoryPicker,
 }: {
   item:           DbShoppingListItem
   /** Strips the row's own bg/border for nested rendering inside a group container. */
@@ -138,6 +156,7 @@ function ItemRow({
   onUpdateLocal:  (id: string, fields: Partial<DbShoppingListItem>) => void
   onCommitRemote: (id: string) => void
   onDelete:       (id: string) => void
+  onOpenCategoryPicker: (id: string) => void
 }) {
   // Include the row's existing non-standard unit (e.g. legacy "pinch") so
   // the select doesn't show a blank value for unfamiliar units.
@@ -169,7 +188,7 @@ function ItemRow({
         <p className={`text-base leading-snug break-words ${item.checked ? 'line-through text-muted' : 'text-text'}`}>
           {item.ingredient_name}
         </p>
-        <div className="flex items-center gap-2 mt-2">
+        <div className="flex items-center gap-2 mt-2 flex-wrap">
           <input
             type="text"
             inputMode="decimal"
@@ -193,6 +212,14 @@ function ItemRow({
               <option key={u} value={u}>{u}</option>
             ))}
           </select>
+          {/* Category chip — tap to open the picker. */}
+          <button
+            onClick={() => onOpenCategoryPicker(item.id)}
+            aria-label={`Change category from ${CATEGORY_LABELS[item.category]}`}
+            className="text-xs font-medium text-muted hover:text-text px-2.5 py-1.5 rounded-lg border border-border hover:border-accent/40 transition-colors"
+          >
+            {CATEGORY_LABELS[item.category]}
+          </button>
         </div>
       </div>
 
@@ -218,6 +245,7 @@ function GroupContainer({
   onUpdateLocal,
   onCommitRemote,
   onDelete,
+  onOpenCategoryPicker,
 }: {
   items:    DbShoppingListItem[]
   onCombine: (items: DbShoppingListItem[], name: string, qty: string | null, unit: string | null) => Promise<void> | void
@@ -225,6 +253,7 @@ function GroupContainer({
   onUpdateLocal:   (id: string, fields: Partial<DbShoppingListItem>) => void
   onCommitRemote:  (id: string) => void
   onDelete:        (id: string) => void
+  onOpenCategoryPicker: (id: string) => void
 }) {
   // The displayed group label — uses the first item's already-cleaned name
   // rather than the aggressive normalised form, since "all-purpose flour"
@@ -283,6 +312,7 @@ function GroupContainer({
             onUpdateLocal={onUpdateLocal}
             onCommitRemote={onCommitRemote}
             onDelete={onDelete}
+            onOpenCategoryPicker={onOpenCategoryPicker}
           />
         ))}
       </div>
@@ -376,6 +406,9 @@ export default function ShoppingListDetailPage({
   const [addQty, setAddQty]   = useState('')
   const [addUnit, setAddUnit] = useState('')
 
+  // Category picker state — open for one item at a time, identified by id.
+  const [pickerOpenFor, setPickerOpenFor] = useState<string | null>(null)
+
   // ── Initial load ────────────────────────────────────────
 
   useEffect(() => {
@@ -389,7 +422,7 @@ export default function ShoppingListDetailPage({
           .eq('id', id)
           .maybeSingle(),
         supabase.from('shopping_list_items')
-          .select('id, list_id, ingredient_name, quantity, unit, checked, created_at, updated_at')
+          .select('id, list_id, ingredient_name, quantity, unit, checked, category, created_at, updated_at')
           .eq('list_id', id)
           .order('created_at', { ascending: true })
           // Safety cap — a 500-item single shopping run is catering-scale.
@@ -414,19 +447,42 @@ export default function ShoppingListDetailPage({
 
   // ── Derived ─────────────────────────────────────────────
 
-  // Build groups + singles, sorted with unchecked first.
+  // Build groups + singles, sorted with unchecked first within each bucket.
   const renderUnits = useMemo(() => buildRenderUnits(items), [items])
 
-  // Flat order for print: items from each render unit in display order.
-  // Group members stay adjacent because they share a single render unit.
-  const flatOrderedItems = useMemo(
-    () => renderUnits.flatMap(u => u.items),
-    [renderUnits],
-  )
+  // Bucket render units by category for fast section rendering. Empty
+  // categories drop out at render time.
+  const unitsByCategory = useMemo(() => {
+    const map = new Map<Category, RenderUnit[]>()
+    for (const cat of CATEGORY_ORDER) map.set(cat, [])
+    for (const u of renderUnits) {
+      map.get(u.category)!.push(u)
+    }
+    return map
+  }, [renderUnits])
+
+  // Flat order for print: walk CATEGORY_ORDER, then each section's render
+  // units, then each unit's items. Same order the user sees on screen.
+  const flatOrderedItems = useMemo(() => {
+    const out: DbShoppingListItem[] = []
+    for (const cat of CATEGORY_ORDER) {
+      const units = unitsByCategory.get(cat) ?? []
+      for (const u of units) {
+        for (const it of u.items) out.push(it)
+      }
+    }
+    return out
+  }, [unitsByCategory])
 
   const checkedCount = useMemo(
     () => items.reduce((n, i) => n + (i.checked ? 1 : 0), 0),
     [items],
+  )
+
+  // The item currently driving the picker modal (null when closed).
+  const pickerItem = useMemo(
+    () => pickerOpenFor ? items.find(i => i.id === pickerOpenFor) ?? null : null,
+    [pickerOpenFor, items],
   )
 
   // ── Name edit handlers ──────────────────────────────────
@@ -517,8 +573,9 @@ export default function ShoppingListDetailPage({
     const trimmed = addName.trim()
     if (!trimmed) return
 
-    const newId = crypto.randomUUID()
-    const now   = new Date().toISOString()
+    const newId    = crypto.randomUUID()
+    const now      = new Date().toISOString()
+    const category = categorize(trimmed)
     const optimistic: DbShoppingListItem = {
       id:              newId,
       list_id:         id,
@@ -526,6 +583,7 @@ export default function ShoppingListDetailPage({
       quantity:        addQty.trim() || null,
       unit:            addUnit || null,
       checked:         false,
+      category,
       created_at:      now,
       updated_at:      now,
     }
@@ -543,9 +601,31 @@ export default function ShoppingListDetailPage({
         ingredient_name: trimmed,
         quantity:        optimistic.quantity,
         unit:            optimistic.unit,
+        category,
       })
     if (error) {
       setItems(prev => prev.filter(i => i.id !== newId))
+      setError(error.message)
+    }
+  }
+
+  // ── Category change handler ─────────────────────────────
+
+  // Optimistic update on the chip → DB. Roll back on error and surface
+  // the message in the existing error banner. Matches the pattern used
+  // throughout the page (toggleChecked, deleteItem, etc.).
+  const changeCategory = async (itemId: string, category: Category) => {
+    const item = items.find(i => i.id === itemId)
+    if (!item || item.category === category) return
+    const previous = item.category
+    setItems(prev => prev.map(it => it.id === itemId ? { ...it, category } : it))
+
+    const { error } = await supabase
+      .from('shopping_list_items')
+      .update({ category, updated_at: new Date().toISOString() })
+      .eq('id', itemId)
+    if (error) {
+      setItems(prev => prev.map(it => it.id === itemId ? { ...it, category: previous } : it))
       setError(error.message)
     }
   }
@@ -563,9 +643,13 @@ export default function ShoppingListDetailPage({
     qty: string | null,
     unit: string | null,
   ) => {
-    const newId = crypto.randomUUID()
-    const now   = new Date().toISOString()
-    const oldIds = groupItems.map(i => i.id)
+    const newId    = crypto.randomUUID()
+    const now      = new Date().toISOString()
+    const oldIds   = groupItems.map(i => i.id)
+    // Reuse the existing group's category — same name + same shopping
+    // section is the user's mental model. Falls back to categorize() if
+    // the group is somehow empty (shouldn't happen, but be defensive).
+    const category = groupItems[0]?.category ?? categorize(name)
 
     const newItem: DbShoppingListItem = {
       id:              newId,
@@ -574,6 +658,7 @@ export default function ShoppingListDetailPage({
       quantity:        qty,
       unit:            unit,
       checked:         false,
+      category,
       created_at:      now,
       updated_at:      now,
     }
@@ -592,6 +677,7 @@ export default function ShoppingListDetailPage({
         ingredient_name: name,
         quantity:        qty,
         unit:            unit,
+        category,
       })
 
     if (insertRes.error) {
@@ -624,11 +710,22 @@ export default function ShoppingListDetailPage({
       return
     }
 
-    // Use the flat order from renderUnits — group members stay adjacent in print.
-    const itemRows = flatOrderedItems.map(item => {
-      const text = formatItemForPrint(item)
-      return `<li class="${item.checked ? 'done' : ''}"><span class="box"></span><span class="text">${escapeHtml(text)}</span></li>`
-    }).join('')
+    // One <section> per non-empty category, each with a heading and a list
+    // of items. Categories render in CATEGORY_ORDER for consistency with
+    // the on-screen layout. Empty categories drop out.
+    const categorizedHtml = CATEGORY_ORDER
+      .map(cat => {
+        const units = unitsByCategory.get(cat) ?? []
+        const catItems = units.flatMap(u => u.items)
+        if (catItems.length === 0) return ''
+        const rows = catItems.map(item => {
+          const text = formatItemForPrint(item)
+          return `<li class="${item.checked ? 'done' : ''}"><span class="box"></span><span class="text">${escapeHtml(text)}</span></li>`
+        }).join('')
+        return `<h2>${escapeHtml(CATEGORY_LABELS[cat])}</h2><ul>${rows}</ul>`
+      })
+      .filter(Boolean)
+      .join('\n')
 
     const html = `<!DOCTYPE html>
 <html lang="en">
@@ -649,8 +746,18 @@ export default function ShoppingListDetailPage({
   .brand { text-align: center; margin: 0 0 20px 0; }
   .brand img { width: 96px; height: 96px; display: inline-block; }
   h1 { font-size: 36px; margin: 0 0 8px 0; font-weight: 700; }
+  h2 {
+    font-size: 18px;
+    font-weight: 700;
+    margin: 24px 0 8px 0;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #333;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  h2:first-of-type { margin-top: 8px; }
   .meta { color: #555; font-size: 13px; margin: 0 0 28px 0; padding-bottom: 16px; border-bottom: 1px solid #ddd; }
-  ul { list-style: none; padding: 0; margin: 0; }
+  ul { list-style: none; padding: 0; margin: 0 0 4px 0; }
   li { display: flex; align-items: flex-start; gap: 14px; padding: 12px 0; border-bottom: 1px solid #eee; font-size: 18px; }
   .box {
     display: inline-block;
@@ -683,7 +790,7 @@ export default function ShoppingListDetailPage({
   <p class="meta">${items.length} item${items.length !== 1 ? 's' : ''} · ${escapeHtml(new Date().toLocaleDateString())}</p>
   ${items.length === 0
     ? '<p style="font-style: italic; color: #888;">No items in this list.</p>'
-    : `<ul>${itemRows}</ul>`}
+    : categorizedHtml}
 </body>
 </html>`
 
@@ -776,7 +883,8 @@ export default function ShoppingListDetailPage({
         </div>
       )}
 
-      {/* Items — grouped same-name items render inside a GroupContainer */}
+      {/* Items — grouped by category section, each section contains
+          render units (singles + same-name groups) in unchecked-first order. */}
       {items.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center bg-surface border border-border rounded-2xl mb-6">
           <span className="text-4xl mb-4 select-none">🛒</span>
@@ -786,29 +894,48 @@ export default function ShoppingListDetailPage({
           </p>
         </div>
       ) : (
-        <div className="space-y-2 mb-6">
-          {renderUnits.map(unit =>
-            unit.kind === 'group' ? (
-              <GroupContainer
-                key={unit.key}
-                items={unit.items}
-                onCombine={performCombine}
-                onToggleChecked={toggleChecked}
-                onUpdateLocal={updateItemLocal}
-                onCommitRemote={commitItemRemote}
-                onDelete={deleteItem}
-              />
-            ) : (
-              <ItemRow
-                key={unit.key}
-                item={unit.items[0]}
-                onToggleChecked={toggleChecked}
-                onUpdateLocal={updateItemLocal}
-                onCommitRemote={commitItemRemote}
-                onDelete={deleteItem}
-              />
+        <div className="mb-6">
+          {CATEGORY_ORDER.map(cat => {
+            const units = unitsByCategory.get(cat) ?? []
+            if (units.length === 0) return null
+            // Count individual items (groups contribute their member count) so
+            // the header shows physical shopping-list size, not abstract units.
+            const itemCount = units.reduce((n, u) => n + u.items.length, 0)
+            return (
+              <section key={cat} className="mb-6">
+                <h2 className="font-display text-lg font-bold text-text mb-3">
+                  {CATEGORY_LABELS[cat]}
+                  <span className="text-sm font-normal text-muted ml-2">({itemCount})</span>
+                </h2>
+                <div className="space-y-2">
+                  {units.map(unit =>
+                    unit.kind === 'group' ? (
+                      <GroupContainer
+                        key={unit.key}
+                        items={unit.items}
+                        onCombine={performCombine}
+                        onToggleChecked={toggleChecked}
+                        onUpdateLocal={updateItemLocal}
+                        onCommitRemote={commitItemRemote}
+                        onDelete={deleteItem}
+                        onOpenCategoryPicker={setPickerOpenFor}
+                      />
+                    ) : (
+                      <ItemRow
+                        key={unit.key}
+                        item={unit.items[0]}
+                        onToggleChecked={toggleChecked}
+                        onUpdateLocal={updateItemLocal}
+                        onCommitRemote={commitItemRemote}
+                        onDelete={deleteItem}
+                        onOpenCategoryPicker={setPickerOpenFor}
+                      />
+                    )
+                  )}
+                </div>
+              </section>
             )
-          )}
+          })}
         </div>
       )}
 
@@ -873,6 +1000,16 @@ export default function ShoppingListDetailPage({
           <Plus size={14} />
           Add Custom Item
         </button>
+      )}
+
+      {/* Category picker — mounted only when an item is targeted. */}
+      {pickerItem && (
+        <CategoryPicker
+          itemName={pickerItem.ingredient_name}
+          current={pickerItem.category}
+          onClose={() => setPickerOpenFor(null)}
+          onPick={(cat) => changeCategory(pickerItem.id, cat)}
+        />
       )}
     </div>
   )

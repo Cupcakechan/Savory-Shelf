@@ -1,5 +1,6 @@
 import { createBrowserClient } from '@supabase/ssr'
 import type { Recipe } from './types'
+import type { Category } from './shopping-categorizer'
 
 // createBrowserClient (from @supabase/ssr) stores the session in cookies
 // instead of localStorage, making it readable by the middleware and server
@@ -93,6 +94,10 @@ export interface DbShoppingListItem {
   quantity:        string | null
   unit:            string | null
   checked:         boolean
+  /** Kitchen-aisle grouping. Added by docs/migrate-shopping-categories.sql.
+   *  Closed-set enforcement at the DB level via a CHECK constraint mirroring
+   *  the Category union from lib/shopping-categorizer.ts. */
+  category:        Category
   created_at:      string | null
   updated_at:      string | null
 }
